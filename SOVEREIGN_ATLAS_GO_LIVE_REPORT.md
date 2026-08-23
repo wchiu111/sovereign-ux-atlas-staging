@@ -384,3 +384,49 @@ All nine approved Pass 1 pages returned their approved unique title, description
 **READY FOR PRODUCTION SEO PROMOTION**
 
 This recommendation covers the reviewed SEO Pass 1 promotion only. Production remains unchanged and requires its separately approved promotion workflow.
+
+## SEO Pass 1 Production Promotion — 2026-08-22
+
+### Promotion and deployment
+
+- Source: `staging` at `268dba8e72c21e41b84f5715a2844d1a04c36caf`.
+- Target: `main`; promoted with a clean fast-forward from `0dc59b5`.
+- Verified production deployment: `dpl_FjksY64Xp23b7yKBBtVnTz7Z25JN` (`Ready`, Production), aliased to `https://wchiudesign.com` and `https://www.wchiudesign.com`.
+- Environment boundary: production `VITE_SITE_URL` and `VITE_SITE_INDEXABLE` are separately Production-scoped in Vercel. Live output confirms the production domain and indexable build; Contact and Atlas Assist configuration was not modified.
+- Staging remained intact at `268dba8`; no branch deletion, rebase, squash, force push, or secret commit occurred.
+
+### Raw HTML production SEO QA
+
+All nine approved Pass 1 pages returned the approved route-specific title and description, exact production canonical, `index, follow`, matching Open Graph and Twitter metadata, and valid JSON-LD. No staging URL, homepage-canonical leakage, `.w. designs` metadata, or `Sovereign UX Atlas 2.0` branding appeared.
+
+| Route | Result |
+| --- | --- |
+| `/` | PASS |
+| `/case-studies/agentic-insurance` | PASS |
+| `/case-studies/globality` | PASS |
+| `/case-studies/oracle` | PASS |
+| `/case-studies/sovereign-atlas` | PASS |
+| `/frameworks/authority-gradient` | PASS |
+| `/frameworks/relational-ai-literacy` | PASS |
+| `/frameworks/regenerative-systems` | PASS |
+| `/frameworks/presence-navigation` | PASS |
+
+- `robots.txt`: PASS — allows crawling and declares `https://wchiudesign.com/sitemap.xml`.
+- `sitemap.xml`: PASS — exactly nine approved production URLs; no staging, Experiment, Application Kit, Observatory, Search, Assist, focused, evidence, or modal/drawer URLs.
+- Excluded routes: PASS — representative Experiment, Application Kit, focused reading, and system routes return raw `noindex, nofollow` with no server-rendered canonical.
+
+### Runtime regression QA
+
+- Homepage and Atlas: PASS.
+- Case Studies and Frameworks: PASS — system entry and Decision Rights loaded directly.
+- Search: PASS — `Globality` navigated to its production overview and updated client metadata.
+- Focus Mode and deep-link refresh: PASS — `/case-studies/globality/problem` restored `The Problem` across refresh.
+- Share: PASS — reported `COPIED` while preserving the exact production route.
+- Retreat and browser history: PASS — Focused → Overview, Back, and Forward restored the expected routes.
+- Hydration, console, and network: PASS for the tested SEO/navigation flows; no warning- or error-level browser logs and no unexpected 404/500 responses were observed. Atlas Assist billing behavior remains a separate deferred concern.
+
+### Search-engine readiness
+
+**READY TO REQUEST GOOGLE REINDEXING**
+
+No Search Console request was submitted. Pass 2 remains deferred: Experiments, Application Kit positioning, social-card imagery, richer previews, optional schema improvements, and obsolete-URL recrawl/removal strategy.
