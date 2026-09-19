@@ -4,6 +4,7 @@
  */
 
 import { useEffect, type RefObject } from "react";
+import { FRAMEWORK_SYSTEM_PLANETS } from "../frameworks/frameworkTopology";
 
 /**
  * Canonical authored coordinate space for the mobile Atlas.
@@ -37,6 +38,13 @@ export const DUR  = "0.52s";
 export const ANIM = `transform ${DUR} ${EASE}`;
 export const FADE = `opacity 0.32s ease`;
 
+// Shared authored-content frame for mobile narrative surfaces.
+// Spatial constellations remain full-canvas; chrome and authored content use this inset.
+export const MOBILE_CONTENT_INSET = "clamp(24px, 7.2vw, 30px)";
+export const MOBILE_CHROME_MIN_HEIGHT = 62;
+export const MOBILE_NARRATIVE_SURFACE_TOP = 24;
+export const MOBILE_NARRATIVE_SURFACE_BOTTOM = 28;
+
 export const NEXUS   = { x: 195, y: 355 };
 export const BASE_R  = 18;
 export const EX_POS  = { x: 298, y: 178 };
@@ -47,26 +55,18 @@ export type MobileState =
   | "atlas-landing"
   | "system-awakened"
   | "system-overview"
-  | "case-studies-focus"
-  | "project-awakened"
-  | "project-overview"
   | "project-reading"
-  | "evidence-viewer"
   | "frameworks-focus"
-  | "framework-awakened"
-  | "framework-overview"
   | "framework-reading"
   | "framework-evidence";
 
 export const MOBILE_STATES: readonly MobileState[] = [
   "atlas-landing", "system-awakened", "system-overview",
-  "case-studies-focus", "project-awakened", "project-overview",
-  "project-reading", "evidence-viewer",
-  "frameworks-focus", "framework-awakened", "framework-overview",
-  "framework-reading", "framework-evidence",
+  "project-reading",
+  "frameworks-focus", "framework-reading", "framework-evidence",
 ];
 
-export interface Planet { angle: number; label: string; }
+export interface Planet { angle: number; label: string; color?: string; }
 export interface SystemDef {
   id: string; label: string; color: string;
   orbitPath: string; planets: Planet[];
@@ -97,14 +97,7 @@ export const SYSTEMS: SystemDef[] = [
   {
     id: "frameworks", label: "FRAMEWORKS", color: T.frameworks,
     orbitPath: "M -60 430 C 40 520 140 565 195 565 C 250 565 350 520 450 430",
-    planets: [
-      { angle: -100, label: "AUTHORITY GRADIENT" },
-      { angle:  -28, label: "RELATIONAL AI LITERACY" },
-      { angle:   44, label: "MODEL DESIGN" },
-      { angle:  116, label: "APPLICATION KIT" },
-      { angle:  188, label: "REGENERATIVE SYSTEMS" },
-      { angle:  260, label: "PRESENCE NAVIGATION" },
-    ],
+    planets: [...FRAMEWORK_SYSTEM_PLANETS],
   },
 ];
 

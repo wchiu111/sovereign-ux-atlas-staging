@@ -1,24 +1,26 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import { T } from "../components/mobileShared";
 import MobileEvidenceBlock from "./MobileEvidenceBlock";
-import {
-  evidenceForSection,
-  type MobileEvidenceItem,
-} from "./sovereignAtlasEvidence";
-import type { SovereignAtlasReadingSection } from "./sovereignAtlasReadingScaffold";
+import type {
+  MobileEvidenceItem,
+  MobileReadingSectionData,
+} from "./mobileReadingTypes";
 
 export default function MobileReadingSection({
   section,
+  totalSections,
+  evidence,
   setRef,
   onInspectEvidence,
 }: {
-  section: SovereignAtlasReadingSection;
+  section: MobileReadingSectionData;
+  totalSections: number;
+  evidence: readonly MobileEvidenceItem[];
   setRef: (node: HTMLElement | null) => void;
   onInspectEvidence: (item: MobileEvidenceItem) => void;
 }) {
   const localRef = useRef<HTMLElement | null>(null);
   const [entered, setEntered] = useState(false);
-  const evidence = evidenceForSection(section.id);
 
   useEffect(() => {
     const node = localRef.current;
@@ -49,6 +51,19 @@ export default function MobileReadingSection({
   const evidenceAfter = (paragraphIndex: number) =>
     evidence.filter((item) => item.insertAfterParagraph === paragraphIndex);
 
+  const splitListParagraph = (paragraph: string) => {
+    const marker = "\n\n• ";
+    if (!paragraph.includes(marker)) return null;
+
+    const [intro, listBody] = paragraph.split(marker, 2);
+    const items = listBody
+      .split("\n• ")
+      .map((item) => item.trim())
+      .filter(Boolean);
+
+    return { intro: intro.trim(), items };
+  };
+
   return (
     <section
       id={`mobile-reading-${section.id}`}
@@ -66,55 +81,13 @@ export default function MobileReadingSection({
     >
       <div
         style={{
+          marginBottom: 18,
           transform: entered ? "translateY(0)" : "translateY(10px)",
           opacity: entered ? 1 : 0,
           transition:
             "transform 360ms cubic-bezier(0.22,1,0.36,1), opacity 280ms ease",
         }}
       >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "baseline",
-            gap: 10,
-            marginBottom: 12,
-          }}
-        >
-          <div
-            style={{
-              fontFamily: T.mono,
-              fontSize: "clamp(8px, 2.2vw, 8.5px)",
-              letterSpacing: "0.14em",
-              color: T.identityGold,
-              opacity: 0.56,
-            }}
-          >
-            {section.number}
-          </div>
-          <div
-            style={{
-              fontFamily: T.mono,
-              fontSize: "clamp(8.5px, 2.3vw, 9px)",
-              letterSpacing: "0.18em",
-              color: "#F0E9D8",
-              opacity: 0.84,
-            }}
-          >
-            {section.label}
-          </div>
-          <div
-            style={{
-              fontFamily: T.mono,
-              fontSize: "clamp(7.5px, 2vw, 8px)",
-              letterSpacing: "0.14em",
-              color: T.accentGold,
-              opacity: 0.54,
-            }}
-          >
-            OF 05
-          </div>
-        </div>
-
         <h2
           style={{
             margin: "0 0 10px",
@@ -159,22 +132,25 @@ export default function MobileReadingSection({
         const isShortEmphasis =
           paragraph.length < 58 &&
           !paragraph.endsWith(".") &&
-          !paragraph.endsWith("?");
+          !paragraph.endsWith("?") &&
+          !paragraph.includes("\n");
 
         const inlineEvidence = evidenceAfter(index);
 
         return (
           <Fragment key={index}>
-            <p
-              style={{
-                margin:
-                  inlineEvidence.length > 0
-                    ? "0 0 20px"
-                    : index === section.paragraphs.length - 1
-                      ? 0
-                      : isShortEmphasis
-                        ? "0 0 18px"
-                        : "0 0 21px",
+            {(() => {
+              const listParagraph = splitListParagraph(paragraph);
+              const blockMargin =
+                inlineEvidence.length > 0
+                  ? "0 0 20px"
+                  : index === section.paragraphs.length - 1
+                    ? 0
+                    : isShortEmphasis
+                      ? "0 0 18px"
+                      : "0 0 21px";
+
+              const baseTextStyle = {
                 maxWidth: 340,
                 fontFamily: T.serif,
                 fontSize: isShortEmphasis
@@ -184,10 +160,56 @@ export default function MobileReadingSection({
                 lineHeight: isShortEmphasis ? 1.42 : 1.7,
                 color: isShortEmphasis ? T.accentGold : "#F0E9D8",
                 opacity: isShortEmphasis ? 0.92 : 0.89,
-              }}
-            >
-              {paragraph}
-            </p>
+              } as const;
+
+              if (!listParagraph) {
+                return (
+                  <p
+                    style={{
+                      ...baseTextStyle,
+                      margin: blockMargin,
+                      whiteSpace: "pre-line",
+                    }}
+                  >
+                    {paragraph}
+                  </p>
+                );
+              }
+
+              return (
+                <div style={{ margin: blockMargin, maxWidth: 340 }}>
+                  {listParagraph.intro && (
+                    <p
+                      style={{
+                        ...baseTextStyle,
+                        margin: "0 0 12px",
+                      }}
+                    >
+                      {listParagraph.intro}
+                    </p>
+                  )}
+                  <ul
+                    style={{
+                      ...baseTextStyle,
+                      margin: 0,
+                      paddingLeft: 20,
+                    }}
+                  >
+                    {listParagraph.items.map((item) => (
+                      <li
+                        key={item}
+                        style={{
+                          marginBottom: 6,
+                          paddingLeft: 2,
+                        }}
+                      >
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              );
+            })()}
 
             {inlineEvidence.map((item) => (
               <MobileEvidenceBlock
@@ -220,6 +242,7 @@ export default function MobileReadingSection({
         >
           SECTION INSIGHT
         </div>
+
         <div
           style={{
             maxWidth: 326,

@@ -1,9 +1,8 @@
 /**
- * ReadingScene — Focused Mode Pass 3
+ * ReadingScene
  *
- * Continuous Sovereign Atlas reading with inline evidence.
- * Evidence inspection overlays the mounted reading document so the reader
- * returns to the exact previous scroll position.
+ * Shared continuous-reading renderer for mobile case studies.
+ * Project-specific content and evidence are selected through the registry.
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -12,23 +11,26 @@ import MobileReadingHeader from "../reading/MobileReadingHeader";
 import MobileSectionRail from "../reading/MobileSectionRail";
 import MobileReadingSection from "../reading/MobileReadingSection";
 import MobileEvidenceViewer from "../reading/MobileEvidenceViewer";
-import type { MobileEvidenceItem } from "../reading/sovereignAtlasEvidence";
-import {
-  SOVEREIGN_ATLAS_READING,
-  type SovereignAtlasSectionId,
-} from "../reading/sovereignAtlasReadingScaffold";
+import { mobileCaseStudyDocumentFor } from "../reading/caseStudyReadingRegistry";
+import type {
+  MobileCaseStudyProjectId,
+  MobileEvidenceItem,
+} from "../reading/mobileReadingTypes";
 
-function SovereignAtlasReadingSurface({ onBack }: { onBack: () => void }) {
-  const sections = SOVEREIGN_ATLAS_READING.sections;
+function CaseStudyReadingSurface({
+  projectId,
+  onBack,
+}: {
+  projectId: MobileCaseStudyProjectId | null;
+  onBack: () => void;
+}) {
+  const caseStudyDocument = mobileCaseStudyDocumentFor(projectId);
+  const sections = caseStudyDocument.sections;
   const scrollRef = useRef<HTMLDivElement>(null);
   const chromeRef = useRef<HTMLDivElement>(null);
-  const sectionRefs = useRef(
-    new Map<SovereignAtlasSectionId, HTMLElement>(),
-  );
+  const sectionRefs = useRef(new Map<string, HTMLElement>());
 
-  const [activeId, setActiveId] = useState<SovereignAtlasSectionId>(
-    sections[0].id,
-  );
+  const [activeId, setActiveId] = useState<string>(sections[0].id);
   const [selectedEvidence, setSelectedEvidence] =
     useState<MobileEvidenceItem | null>(null);
   const [headerElevated, setHeaderElevated] = useState(false);
@@ -36,11 +38,18 @@ function SovereignAtlasReadingSurface({ onBack }: { onBack: () => void }) {
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   const [chromeHeight, setChromeHeight] = useState(114);
   const exitTimerRef = useRef<number | null>(null);
+  const evidenceTriggerRef = useRef<HTMLElement | null>(null);
 
   const sectionIds = useMemo(
     () => sections.map((section) => section.id),
     [sections],
   );
+
+  useEffect(() => {
+    setActiveId(sections[0].id);
+    setSelectedEvidence(null);
+    scrollRef.current?.scrollTo({ top: 0, behavior: "auto" });
+  }, [caseStudyDocument.id, sections]);
 
   useEffect(() => {
     const media = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -158,7 +167,7 @@ function SovereignAtlasReadingSurface({ onBack }: { onBack: () => void }) {
     };
   }, [sectionIds]);
 
-  const scrollToSection = (id: SovereignAtlasSectionId) => {
+  const scrollToSection = (id: string) => {
     const node = sectionRefs.current.get(id);
     const scroller = scrollRef.current;
     if (!node || !scroller) return;
@@ -177,6 +186,9 @@ function SovereignAtlasReadingSurface({ onBack }: { onBack: () => void }) {
 
   const activeSection =
     sections.find((section) => section.id === activeId) ?? sections[0];
+
+  const evidenceForSection = (sectionId: string) =>
+    caseStudyDocument.evidence.filter((item) => item.sectionId === sectionId);
 
   return (
     <div
@@ -238,6 +250,7 @@ function SovereignAtlasReadingSurface({ onBack }: { onBack: () => void }) {
           }
         }
       `}</style>
+
       <div
         ref={chromeRef}
         style={{
@@ -247,13 +260,14 @@ function SovereignAtlasReadingSurface({ onBack }: { onBack: () => void }) {
         }}
       >
         <MobileReadingHeader
-          title={SOVEREIGN_ATLAS_READING.title}
+          title={caseStudyDocument.title}
           onBack={requestBack}
           elevated={headerElevated}
         />
         <MobileSectionRail
           sections={sections}
           activeId={activeId}
+          ariaLabel={`${caseStudyDocument.title} case study sections`}
           onSelect={scrollToSection}
         />
       </div>
@@ -261,7 +275,7 @@ function SovereignAtlasReadingSurface({ onBack }: { onBack: () => void }) {
       <div
         ref={scrollRef}
         role="main"
-        aria-label="Sovereign Atlas case study"
+        aria-label={caseStudyDocument.ariaLabel}
         style={{
           position: "absolute",
           top: chromeHeight,
@@ -278,17 +292,26 @@ function SovereignAtlasReadingSurface({ onBack }: { onBack: () => void }) {
           <MobileReadingSection
             key={section.id}
             section={section}
+            totalSections={sections.length}
+            evidence={evidenceForSection(section.id)}
             setRef={(node) => {
               if (node) sectionRefs.current.set(section.id, node);
               else sectionRefs.current.delete(section.id);
             }}
-            onInspectEvidence={(item) => setSelectedEvidence(item)}
+            onInspectEvidence={(item) => {
+              evidenceTriggerRef.current =
+                window.document.activeElement instanceof HTMLElement
+                  ? window.document.activeElement
+                  : null;
+              setSelectedEvidence(item);
+            }}
           />
         ))}
 
         <div
           style={{
-            padding: "clamp(42px, 11vw, 50px) clamp(22px, 6.6vw, 28px) calc(72px + env(safe-area-inset-bottom))",
+            padding:
+              "clamp(42px, 11vw, 50px) clamp(22px, 6.6vw, 28px) calc(72px + env(safe-area-inset-bottom))",
             textAlign: "left",
           }}
         >
@@ -331,7 +354,13 @@ function SovereignAtlasReadingSurface({ onBack }: { onBack: () => void }) {
         <MobileEvidenceViewer
           item={selectedEvidence}
           sectionLabel={activeSection.label}
-          onClose={() => setSelectedEvidence(null)}
+          onClose={() => {
+            setSelectedEvidence(null);
+            window.requestAnimationFrame(() => {
+              evidenceTriggerRef.current?.focus({ preventScroll: true });
+              evidenceTriggerRef.current = null;
+            });
+          }}
         />
       )}
     </div>
@@ -339,13 +368,13 @@ function SovereignAtlasReadingSurface({ onBack }: { onBack: () => void }) {
 }
 
 interface ReadingSceneProps {
-  state: "project-reading" | "evidence-viewer";
-  onEvidence: () => void;
+  projectId: MobileCaseStudyProjectId | null;
   onBack: () => void;
 }
 
 export default function ReadingScene({
+  projectId,
   onBack,
 }: ReadingSceneProps) {
-  return <SovereignAtlasReadingSurface onBack={onBack} />;
+  return <CaseStudyReadingSurface projectId={projectId} onBack={onBack} />;
 }
