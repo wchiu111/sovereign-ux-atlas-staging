@@ -1,25 +1,35 @@
 import { useState, type FormEvent } from "react";
+import { transmitContactMessage } from "../../../../experiences/profile/contactClient";
 import { T } from "../../components/mobileShared";
 import { OBSERVATORY_CONTENT } from "../config/observatoryContent";
 
 type State = "idle" | "sending" | "success" | "error";
+type ContactDraft = { name: string; email: string; message: string };
+
+const EMPTY_DRAFT: ContactDraft = { name: "", email: "", message: "" };
 const GREEN = "#33D1A1";
 
 export default function ContactSurface() {
   const [state, setState] = useState<State>("idle");
+  const [draft, setDraft] = useState<ContactDraft>(EMPTY_DRAFT);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (state === "sending") return;
 
     const form = event.currentTarget;
+    const formData = new FormData(form);
+    setDraft({
+      name: String(formData.get("name") ?? ""),
+      email: String(formData.get("email") ?? ""),
+      message: String(formData.get("message") ?? ""),
+    });
     setState("sending");
 
     try {
-      // Mobile v1 preserves Desktop's interaction model. The production
-      // contact transport can be connected after this surface is validated.
-      await new Promise((resolve) => window.setTimeout(resolve, 900));
+      await transmitContactMessage(formData);
       form.reset();
+      setDraft(EMPTY_DRAFT);
       setState("success");
     } catch {
       setState("error");
@@ -130,13 +140,27 @@ export default function ContactSurface() {
         {OBSERVATORY_CONTENT.contact.intro}
       </p>
 
-      <Field label="Name" name="name" disabled={sending} />
+      <Field
+        label="Name"
+        name="name"
+        defaultValue={draft.name}
+        disabled={sending}
+      />
       <Field
         label="Email"
         name="email"
         type="email"
+        defaultValue={draft.email}
         disabled={sending}
       />
+
+      <label
+        aria-hidden="true"
+        style={{ position: "absolute", left: -10_000 }}
+      >
+        Website
+        <input name="website" tabIndex={-1} autoComplete="off" />
+      </label>
 
       <label
         style={{
@@ -156,6 +180,7 @@ export default function ContactSurface() {
           name="message"
           rows={6}
           required
+          defaultValue={draft.message}
           disabled={sending}
           className="observatory-mobile-focusable"
           style={{
@@ -222,11 +247,13 @@ function Field({
   label,
   name,
   type = "text",
+  defaultValue,
   disabled,
 }: {
   label: string;
   name: string;
   type?: string;
+  defaultValue: string;
   disabled: boolean;
 }) {
   return (
@@ -248,6 +275,7 @@ function Field({
         name={name}
         type={type}
         required
+        defaultValue={defaultValue}
         disabled={disabled}
         className="observatory-mobile-focusable"
         style={{
