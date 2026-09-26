@@ -19,7 +19,6 @@ import ReadingScene from "./scenes/ReadingScene";
 import FrameworksScene from "./scenes/FrameworksScene";
 import ExperimentsScene from "./experiments/ExperimentsScene";
 import ObservatoryScene from "./observatory/ObservatoryScene";
-import observatoryBackground from "@/assets/observatory-mobile.jpg";
 import ObservatorySwipeEntry from "./observatory/components/ObservatorySwipeEntry";
 import ObservatorySpatialTransition, {
   OBSERVATORY_SPATIAL_TRANSITION_DURATION,
@@ -132,6 +131,7 @@ export default function MobileAtlas() {
   useStarfield(canvasRef);
 
   const [sceneScale, setSceneScale] = useState(1);
+  const [observatoryScale, setObservatoryScale] = useState(1);
   const [viewportUiTarget, setViewportUiTarget] =
     useState<HTMLDivElement | null>(null);
   const [state, setStateRaw] =
@@ -320,6 +320,7 @@ export default function MobileAtlas() {
         maxPresentationScale,
       );
       setSceneScale(nextScale);
+      setObservatoryScale(Math.max(width / W, height / H));
     };
 
     updateSceneScale();
@@ -842,20 +843,6 @@ export default function MobileAtlas() {
               }}
             >
               <div
-                aria-hidden="true"
-                style={{
-                  position: "absolute",
-                  inset: 0,
-                  backgroundImage: `url(${observatoryBackground})`,
-                  backgroundPosition: "50% 50%",
-                  backgroundSize: "cover",
-                  filter:
-                    "brightness(0.76) saturate(0.78) contrast(1.04) blur(3px)",
-                  transform: "scale(1.025)",
-                }}
-              />
-
-              <div
                 style={{
                   position: "absolute",
                   left: "50%",
@@ -863,7 +850,7 @@ export default function MobileAtlas() {
                   width: W,
                   height: H,
                   overflow: "hidden",
-                  transform: `translate(-50%, -50%) scale(${sceneScale})`,
+                  transform: `translate(-50%, -50%) scale(${observatoryScale})`,
                   transformOrigin: "center center",
                 }}
               >
