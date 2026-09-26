@@ -131,6 +131,7 @@ export default function MobileAtlas() {
   useStarfield(canvasRef);
 
   const [sceneScale, setSceneScale] = useState(1);
+  const [observatoryScale, setObservatoryScale] = useState(1);
   const [viewportUiTarget, setViewportUiTarget] =
     useState<HTMLDivElement | null>(null);
   const [state, setStateRaw] =
@@ -319,6 +320,7 @@ export default function MobileAtlas() {
         maxPresentationScale,
       );
       setSceneScale(nextScale);
+      setObservatoryScale(Math.max(width / W, height / H));
     };
 
     updateSceneScale();
@@ -832,14 +834,10 @@ export default function MobileAtlas() {
               className="mobile-atlas-observatory-layer"
               style={{
                 position: "absolute",
-                width: W,
-                height: H,
+                inset: 0,
                 zIndex:
                   observatoryPhase === "exiting" ? 46 : 44,
                 overflow: "hidden",
-                flexShrink: 0,
-                transform: `scale(${sceneScale})`,
-                transformOrigin: "center center",
                 pointerEvents:
                   observatoryPhase === "open" ? "auto" : "none",
               }}
@@ -847,37 +845,50 @@ export default function MobileAtlas() {
               <div
                 style={{
                   position: "absolute",
-                  inset: 0,
-                  opacity:
-                    observatoryPhase === "pre-enter" ||
-                    (observatoryPrefersReducedMotion &&
-                      observatoryPhase === "exiting")
-                      ? 0
-                      : 1,
-                  transform:
-                    observatoryPhase === "pre-enter"
-                      ? "scale(1.04)"
-                      : "scale(1)",
-                  filter:
-                    observatoryPhase === "pre-enter"
-                      ? "blur(7px)"
-                      : "blur(0px)",
-                  transformOrigin: "50% 44%",
-                  animation:
-                    observatoryPrefersReducedMotion
-                      ? undefined
-                      : observatorySpatialAnimation(
-                          observatoryDirection,
-                        ),
-                  transition: observatoryPrefersReducedMotion
-                    ? "opacity 160ms ease, filter 160ms ease"
-                    : undefined,
-                  willChange: "transform, filter, opacity",
+                  left: "50%",
+                  top: "50%",
+                  width: W,
+                  height: H,
+                  overflow: "hidden",
+                  transform: `translate(-50%, -50%) scale(${observatoryScale})`,
+                  transformOrigin: "center center",
                 }}
               >
-                <ObservatoryScene
-                  onReturnToAtlas={exitObservatory}
-                />
+                <div
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    opacity:
+                      observatoryPhase === "pre-enter" ||
+                      (observatoryPrefersReducedMotion &&
+                        observatoryPhase === "exiting")
+                        ? 0
+                        : 1,
+                    transform:
+                      observatoryPhase === "pre-enter"
+                        ? "scale(1.04)"
+                        : "scale(1)",
+                    filter:
+                      observatoryPhase === "pre-enter"
+                        ? "blur(7px)"
+                        : "blur(0px)",
+                    transformOrigin: "50% 44%",
+                    animation:
+                      observatoryPrefersReducedMotion
+                        ? undefined
+                        : observatorySpatialAnimation(
+                            observatoryDirection,
+                          ),
+                    transition: observatoryPrefersReducedMotion
+                      ? "opacity 160ms ease, filter 160ms ease"
+                      : undefined,
+                    willChange: "transform, filter, opacity",
+                  }}
+                >
+                  <ObservatoryScene
+                    onReturnToAtlas={exitObservatory}
+                  />
+                </div>
               </div>
             </div>
           )}
