@@ -320,7 +320,7 @@ export default function MobileAtlas() {
         maxPresentationScale,
       );
       setSceneScale(nextScale);
-      setObservatoryScale(Math.max(width / W, height / H));
+      setObservatoryScale(Math.min(width / W, height / H));
     };
 
     updateSceneScale();
@@ -845,50 +845,38 @@ export default function MobileAtlas() {
               <div
                 style={{
                   position: "absolute",
-                  left: "50%",
-                  top: "50%",
-                  width: W,
-                  height: H,
-                  overflow: "hidden",
-                  transform: `translate(-50%, -50%) scale(${observatoryScale})`,
-                  transformOrigin: "center center",
+                  inset: 0,
+                  opacity:
+                    observatoryPhase === "pre-enter" ||
+                    (observatoryPrefersReducedMotion &&
+                      observatoryPhase === "exiting")
+                      ? 0
+                      : 1,
+                  transform:
+                    observatoryPhase === "pre-enter"
+                      ? "scale(1.04)"
+                      : "scale(1)",
+                  filter:
+                    observatoryPhase === "pre-enter"
+                      ? "blur(7px)"
+                      : "blur(0px)",
+                  transformOrigin: "50% 44%",
+                  animation:
+                    observatoryPrefersReducedMotion
+                      ? undefined
+                      : observatorySpatialAnimation(
+                          observatoryDirection,
+                        ),
+                  transition: observatoryPrefersReducedMotion
+                    ? "opacity 160ms ease, filter 160ms ease"
+                    : undefined,
+                  willChange: "transform, filter, opacity",
                 }}
               >
-                <div
-                  style={{
-                    position: "absolute",
-                    inset: 0,
-                    opacity:
-                      observatoryPhase === "pre-enter" ||
-                      (observatoryPrefersReducedMotion &&
-                        observatoryPhase === "exiting")
-                        ? 0
-                        : 1,
-                    transform:
-                      observatoryPhase === "pre-enter"
-                        ? "scale(1.04)"
-                        : "scale(1)",
-                    filter:
-                      observatoryPhase === "pre-enter"
-                        ? "blur(7px)"
-                        : "blur(0px)",
-                    transformOrigin: "50% 44%",
-                    animation:
-                      observatoryPrefersReducedMotion
-                        ? undefined
-                        : observatorySpatialAnimation(
-                            observatoryDirection,
-                          ),
-                    transition: observatoryPrefersReducedMotion
-                      ? "opacity 160ms ease, filter 160ms ease"
-                      : undefined,
-                    willChange: "transform, filter, opacity",
-                  }}
-                >
-                  <ObservatoryScene
-                    onReturnToAtlas={exitObservatory}
-                  />
-                </div>
+                <ObservatoryScene
+                  onReturnToAtlas={exitObservatory}
+                  presentationScale={observatoryScale}
+                />
               </div>
             </div>
           )}

@@ -19,6 +19,7 @@ export default function ObservatoryPreview({
         right: 18,
         bottom: "calc(22px + env(safe-area-inset-bottom, 0px))",
         zIndex: 18,
+        pointerEvents: "auto",
         overflow: "hidden",
         border: `0.5px solid ${hotspot.color}55`,
         borderRadius: 5,
