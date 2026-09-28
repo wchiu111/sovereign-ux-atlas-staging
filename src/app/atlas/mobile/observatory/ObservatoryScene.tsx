@@ -295,10 +295,10 @@ export default function ObservatoryScene({
               zIndex: 11,
               textAlign: "center",
               fontFamily: T.mono,
-              fontSize: 7,
-              letterSpacing: "0.22em",
+              fontSize: 10,
+              letterSpacing: "0.18em",
               color: T.identityGold,
-              opacity: 0.58,
+              opacity: 0.68,
             }}
           >
             TAP A DESTINATION
