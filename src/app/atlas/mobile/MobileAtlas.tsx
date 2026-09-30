@@ -34,6 +34,8 @@ import type { MobileCaseStudyProjectId } from "./reading/mobileReadingTypes";
 import type { MobileFrameworkId } from "./frameworks/mobileFrameworkTypes";
 import type { FrameworkOverviewId } from "./frameworks/frameworkGeometry";
 import type { MobileExperimentId } from "./experiments/experimentsTypes";
+import type { ObservatoryPanelId } from "./observatory/observatoryTypes";
+import type { AtlasMobileSearchDestination } from "./components/atlasMobileSearchIndex";
 import {
   DEFAULT_MOBILE_FRAMEWORK_ID,
   mobileFrameworkFor,
@@ -53,6 +55,7 @@ type ObservatoryRuntimePhase =
   | "entering"
   | "open"
   | "exiting";
+
 
 const RUNTIME_STATES: readonly AtlasRuntimeState[] = [
   ...MOBILE_STATES,
@@ -149,6 +152,8 @@ export default function MobileAtlas() {
     useState<MobileFrameworkId | null>(null);
   const [returningFrameworksToAtlas, setReturningFrameworksToAtlas] =
     useState(false);
+  const pendingFrameworkSearchIdRef =
+    useRef<FrameworkOverviewId | null>(null);
 
   const [activeCaseStudyProjectId, setActiveCaseStudyProjectId] =
     useState<MobileCaseStudyProjectId | null>(null);
@@ -158,6 +163,8 @@ export default function MobileAtlas() {
   const [activeExperimentId, setActiveExperimentId] =
     useState<MobileExperimentId>(DEFAULT_MOBILE_EXPERIMENT_ID);
   const [returnExperimentId, setReturnExperimentId] =
+    useState<MobileExperimentId | null>(null);
+  const [initialExperimentSearchId, setInitialExperimentSearchId] =
     useState<MobileExperimentId | null>(null);
   const [returningExperimentsToAtlas, setReturningExperimentsToAtlas] =
     useState(false);
@@ -211,6 +218,8 @@ export default function MobileAtlas() {
 
   const [observatoryPhase, setObservatoryPhase] =
     useState<ObservatoryRuntimePhase>("closed");
+  const [pendingObservatoryDestinationId, setPendingObservatoryDestinationId] =
+    useState<ObservatoryPanelId | null>(null);
   const [observatoryPrefersReducedMotion, setObservatoryPrefersReducedMotion] =
     useState(false);
   const observatoryTimerRef = useRef<number | null>(null);
@@ -226,6 +235,18 @@ export default function MobileAtlas() {
   const observatoryTransitionDuration = observatoryPrefersReducedMotion
     ? 160
     : OBSERVATORY_SPATIAL_TRANSITION_DURATION;
+
+  // Bring Atlas chrome back during the final portion of the Observatory
+  // return transition instead of waiting for the overlay to disappear.
+  const observatoryChromeFadeDuration =
+    observatoryPrefersReducedMotion ? 140 : 520;
+  const observatoryChromeFadeDelay =
+    observatoryPrefersReducedMotion
+      ? 0
+      : Math.max(0, observatoryTransitionDuration - 700);
+  const observatoryChromeVisible =
+    observatoryPhase === "closed" ||
+    observatoryPhase === "exiting";
 
   useEffect(() => {
     const media = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -285,6 +306,7 @@ export default function MobileAtlas() {
 
     observatoryTimerRef.current = window.setTimeout(() => {
       setObservatoryPhase("closed");
+      setPendingObservatoryDestinationId(null);
       observatoryTimerRef.current = null;
     }, observatoryTransitionDuration);
   }, [
@@ -294,6 +316,51 @@ export default function MobileAtlas() {
     observatoryVisible,
   ]);
 
+  const handleAtlasSearchNavigate = useCallback(
+    (destination: AtlasMobileSearchDestination) => {
+      if (destination.kind === "case-studies") {
+        // Case Studies uses LandingScene's existing pull choreography.
+        return;
+      }
+
+      if (destination.kind === "frameworks") {
+        pendingFrameworkSearchIdRef.current = destination.id;
+
+        if (destination.id !== "frameworks") {
+          const nextFramework = mobileFrameworkFor(destination.id);
+          setActiveFrameworkId(destination.id);
+          setActiveFrameworkSectionId(
+            nextFramework.sections[0]?.id ?? "",
+          );
+          setActiveFrameworkEvidenceId(null);
+        }
+
+        return;
+      }
+
+      if (destination.kind === "experiments") {
+        setReturningExperimentsToAtlas(false);
+        setReturnExperimentId(null);
+
+        if (destination.id === "experiments") {
+          setInitialExperimentSearchId(null);
+        } else {
+          setInitialExperimentSearchId(destination.id);
+          setActiveExperimentId(destination.id);
+        }
+
+        enterExperiments();
+        return;
+      }
+
+      setPendingObservatoryDestinationId(
+        destination.id === "observatory" ? null : destination.id,
+      );
+      enterObservatory();
+    },
+    [enterExperiments, enterObservatory],
+  );
+
   useEffect(() => {
     return () => clearObservatoryTransition();
   }, [clearObservatoryTransition]);
@@ -301,10 +368,10 @@ export default function MobileAtlas() {
   const debugMode = isDebugMode();
 
   useLayoutEffect(() => {
-    const viewport = runtimeViewportRef.current;
+    const viewport = runtimeViewportRef.current!;
     if (!viewport) return;
 
-    const updateSceneScale = () => {
+    function updateSceneScale() {
       const width = viewport.clientWidth;
       const height = viewport.clientHeight;
       if (width <= 0 || height <= 0) return;
@@ -321,7 +388,7 @@ export default function MobileAtlas() {
       );
       setSceneScale(nextScale);
       setObservatoryScale(Math.min(width / W, height / H));
-    };
+    }
 
     updateSceneScale();
     window.addEventListener("resize", updateSceneScale);
@@ -571,8 +638,25 @@ export default function MobileAtlas() {
                 }
                 onSelectFrameworks={() => {
                   setReturningFrameworksToAtlas(false);
-                  setFrameworkOverviewSelectionId("frameworks");
                   setReturnFrameworkId(null);
+
+                  const searchTarget =
+                    pendingFrameworkSearchIdRef.current ?? "frameworks";
+
+                  if (searchTarget === "frameworks") {
+                    setFrameworkOverviewSelectionId("frameworks");
+                  } else {
+                    const nextFramework =
+                      mobileFrameworkFor(searchTarget);
+                    setActiveFrameworkId(searchTarget);
+                    setActiveFrameworkSectionId(
+                      nextFramework.sections[0]?.id ?? "",
+                    );
+                    setActiveFrameworkEvidenceId(null);
+                    setFrameworkOverviewSelectionId(searchTarget);
+                  }
+
+                  pendingFrameworkSearchIdRef.current = null;
                   setState("frameworks-focus");
                 }}
                 onOverviewExpand={() =>
@@ -596,6 +680,7 @@ export default function MobileAtlas() {
                 onFrameworkReturnComplete={() => {
                   setReturningFrameworksToAtlas(false);
                 }}
+                onSearchNavigate={handleAtlasSearchNavigate}
                 viewportUiTarget={viewportUiTarget}
                 onBack={() => {
                   setActiveCaseStudyProjectId(null);
@@ -614,6 +699,7 @@ export default function MobileAtlas() {
                 onClick={() => {
                   setReturningExperimentsToAtlas(false);
                   setReturnExperimentId(null);
+                  setInitialExperimentSearchId(null);
                   enterExperiments();
                 }}
                 disabled={
@@ -637,14 +723,13 @@ export default function MobileAtlas() {
             )}
 
             {state === "atlas-landing" &&
-              !observatoryVisible &&
               !experimentEntryInProgress &&
               !returningExperimentsToAtlas && (
                 <ObservatorySwipeEntry
-                  disabled={
-                    experimentEntryInProgress ||
-                    returningExperimentsToAtlas
-                  }
+                  visible={observatoryChromeVisible}
+                  fadeInDurationMs={observatoryChromeFadeDuration}
+                  fadeInDelayMs={observatoryChromeFadeDelay}
+                  disabled={observatoryPhase !== "closed"}
                   onCommit={enterObservatory}
                 />
               )}
@@ -793,6 +878,7 @@ export default function MobileAtlas() {
                   setReturnFrameworkId(null);
                 }}
                 onBack={() => {
+                  pendingFrameworkSearchIdRef.current = null;
                   setReturnFrameworkId(null);
                   setFrameworkOverviewSelectionId("frameworks");
                   setReturningFrameworksToAtlas(true);
@@ -805,13 +891,16 @@ export default function MobileAtlas() {
               <ExperimentsScene
                 state="experiments-focus"
                 activeExperimentId={activeExperimentId}
+                initialExperimentId={initialExperimentSearchId}
                 returnExperimentId={returnExperimentId}
                 viewportUiTarget={viewportUiTarget}
                 onSelectExperiment={(experimentId) => {
+                  setInitialExperimentSearchId(null);
                   setReturnExperimentId(null);
                   setActiveExperimentId(experimentId);
                 }}
                 onExplore={(experimentId) => {
+                  setInitialExperimentSearchId(null);
                   setReturnExperimentId(null);
                   setActiveExperimentId(experimentId);
                   setState("experiment-reading");
@@ -820,6 +909,7 @@ export default function MobileAtlas() {
                   setReturnExperimentId(null);
                 }}
                 onBack={() => {
+                  setInitialExperimentSearchId(null);
                   setReturnExperimentId(null);
                   setReturningExperimentsToAtlas(true);
                   setState("atlas-landing");
@@ -876,6 +966,11 @@ export default function MobileAtlas() {
                 <ObservatoryScene
                   onReturnToAtlas={exitObservatory}
                   presentationScale={observatoryScale}
+                  initialDestinationId={
+                    observatoryPhase === "open"
+                      ? pendingObservatoryDestinationId
+                      : null
+                  }
                 />
               </div>
             </div>
@@ -900,14 +995,17 @@ export default function MobileAtlas() {
               zIndex: 20,
               pointerEvents: "none",
               overflow: "hidden",
-              opacity: observatoryVisible
-                ? 0
-                : experimentsViewportUiOpacity,
-              transition: observatoryVisible
-                ? "opacity 180ms ease"
-                : experimentsAtlasTransitionActive
-                ? "opacity 220ms ease"
-                : "none",
+              opacity: observatoryChromeVisible
+                ? experimentsViewportUiOpacity
+                : 0,
+              transition:
+                observatoryPhase === "exiting"
+                  ? `opacity ${observatoryChromeFadeDuration}ms cubic-bezier(0.22,1,0.36,1) ${observatoryChromeFadeDelay}ms`
+                  : observatoryVisible
+                  ? "opacity 180ms ease"
+                  : experimentsAtlasTransitionActive
+                  ? "opacity 220ms ease"
+                  : "none",
             }}
           />
 

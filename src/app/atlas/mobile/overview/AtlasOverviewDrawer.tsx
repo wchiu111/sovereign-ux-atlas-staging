@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
 import { atlasOverviewNarrativeGeometry } from "./atlasOverviewGeometry";
 import type { AtlasOverviewDrawerPhase } from "./atlasOverviewTypes";
@@ -7,12 +7,14 @@ export interface AtlasOverviewDrawerProps {
   title: string;
   color: string;
   titleColor?: string;
+  titleLetterSpacing?: CSSProperties["letterSpacing"];
   countLabel?: string;
   phase: AtlasOverviewDrawerPhase;
   arrivalVisible?: boolean;
   reducedMotion?: boolean;
   closeDurationMs: number;
   reducedDurationMs: number;
+  compact?: boolean;
   children: ReactNode;
   footer?: ReactNode;
 }
@@ -30,17 +32,23 @@ export interface AtlasOverviewDrawerProps {
  * - footer slot geometry
  *
  * System-specific copy and CTA semantics remain in the consumer.
+ *
+ * `compact` preserves the same shell and hierarchy while allowing short
+ * previews to size naturally to their content instead of inheriting the
+ * full narrative-surface height.
  */
 export default function AtlasOverviewDrawer({
   title,
   color,
   titleColor,
+  titleLetterSpacing,
   countLabel,
   phase,
   arrivalVisible = true,
   reducedMotion = false,
   closeDurationMs,
   reducedDurationMs,
+  compact = false,
   children,
   footer,
 }: AtlasOverviewDrawerProps) {
@@ -66,6 +74,7 @@ export default function AtlasOverviewDrawer({
       data-atlas-overview-drawer
       style={{
         ...atlasOverviewNarrativeGeometry(),
+        ...(compact ? { height: "auto" } : {}),
         borderTop: `1px solid ${color}44`,
         background: "rgba(5,5,10,0.96)",
         backdropFilter: "blur(26px)",
@@ -105,7 +114,7 @@ export default function AtlasOverviewDrawer({
               fontFamily: "'EB Garamond', Georgia, serif",
               fontSize: 22,
               fontWeight: 600,
-              letterSpacing: "0.10em",
+              letterSpacing: titleLetterSpacing ?? "0.10em",
               color: titleColor ?? color,
               opacity: 0.98,
               lineHeight: 1.1,
@@ -141,7 +150,7 @@ export default function AtlasOverviewDrawer({
         <div
           style={{
             minWidth: 0,
-            flex: 1,
+            flex: compact ? "0 0 auto" : 1,
             display: "flex",
             flexDirection: "column",
           }}
@@ -152,7 +161,7 @@ export default function AtlasOverviewDrawer({
         {footer && (
           <div
             style={{
-              marginTop: "auto",
+              marginTop: compact ? 22 : "auto",
               paddingTop: 18,
               borderTop: "0.5px solid rgba(240,233,216,0.10)",
             }}
