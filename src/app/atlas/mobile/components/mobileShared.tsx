@@ -5,6 +5,7 @@
 
 import { useEffect, type RefObject } from "react";
 import { FRAMEWORK_SYSTEM_PLANETS } from "../frameworks/frameworkTopology";
+import nebulaBackgroundUrl from "../assets/atlas-nebula-background.png";
 
 /**
  * Canonical authored coordinate space for the mobile Atlas.
@@ -78,39 +79,42 @@ export const SYSTEMS: SystemDef[] = [
     orbitPath: "M 395 100 C 300 10 170 60 95 178 C 20 296 -40 540 -60 960",
     planets: [
       { angle: -85, label: "AGENTIC INSURANCE" },
-      { angle:   5, label: "GLOBALITY" },
-      { angle:  95, label: "ORACLE" },
-      { angle: 185, label: "SOVEREIGN ATLAS" },
+      { angle: -155,label: "SOVEREIGN ATLAS" },
+      { angle: -15, label: "GLOBALITY" },
+      { angle:  55, label: "ORACLE" },
     ],
   },
   {
     id: "experiments", label: "EXPERIMENTS", color: T.experiments,
-    orbitPath: "M -5 100 C 90 10 220 60 298 178 C 370 296 430 540 450 960",
+    orbitPath: "M -5 100 C 90 10 220 60 295 178 C 370 296 430 540 450 960",
     planets: [
-      { angle: -95, label: "AI EVALUATION" },
-      { angle: -23, label: "AUTHORITY DRIFT" },
-      { angle:  55, label: "DESIGN PHILOSOPHY" },
-      { angle: 133, label: "GESTALT PRINCIPLES" },
-      { angle: 211, label: "THINK LIKE A DESIGNER" },
+      { angle: -90, label: "AUTHORITY DRIFT" },
+      { angle: -20, label: "MIRROR TEST" },
+      { angle:  50, label: "EMOTIONAL HEATMAP" },
+      { angle: 140, label: "POST-FILTER SHOPPING" },
+      { angle: 210, label: "FUTURE CONCEPTS" },
     ],
   },
   {
     id: "frameworks", label: "FRAMEWORKS", color: T.frameworks,
-    orbitPath: "M -60 430 C 40 520 140 565 195 565 C 250 565 350 520 450 430",
-    planets: [...FRAMEWORK_SYSTEM_PLANETS],
+    orbitPath: "M -60 940 C 0 720 90 620 195 600 C 300 620 390 720 450 940",
+    planets: FRAMEWORK_SYSTEM_PLANETS,
   },
 ];
 
 export function useStarfield(ref: RefObject<HTMLCanvasElement>) {
   useEffect(() => {
-    const canvas = ref.current;
+    const canvas = ref.current!;
     if (!canvas) return;
-    const ctx = canvas.getContext("2d");
+    const ctx = canvas.getContext("2d")!;
     if (!ctx) return;
 
     const reduceMotion =
       typeof window !== "undefined" &&
       window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    const nebulaImage = new Image();
+    nebulaImage.src = nebulaBackgroundUrl;
 
     type Star = {
       nx: number;
@@ -120,32 +124,32 @@ export function useStarfield(ref: RefObject<HTMLCanvasElement>) {
       phase: number;
       spd: number;
       gold: boolean;
+      hero: boolean;
     };
 
-    // Star positions are normalized to the environmental viewport.
-    // The field therefore fills the device without changing the Atlas scene geometry.
-    const stars: Star[] = Array.from({ length: 360 }, () => ({
+    // Keep some live twinkle above the image plate so the field still feels alive.
+    const stars: Star[] = Array.from({ length: 190 }, (_, index) => ({
       nx:    Math.random(),
       ny:    Math.random(),
-      r:     Math.pow(Math.random(), 2.8) * 1.5 + 0.18,
-      base:  Math.random() * 0.55 + 0.08,
+      r:     Math.pow(Math.random(), 2.5) * 1.15 + 0.18,
+      base:  Math.random() * 0.38 + 0.10,
       phase: Math.random() * Math.PI * 2,
-      spd:   Math.random() * 0.0009 + 0.0002,
-      gold:  Math.random() < 0.30,
+      spd:   Math.random() * 0.0011 + 0.00022,
+      gold:  Math.random() < 0.24,
+      hero:  index % 24 === 0,
     }));
 
     let cssWidth = W;
     let cssHeight = H;
     let raf = 0;
     let t = 0;
+    let imageReady = false;
 
-    const syncCanvasSize = () => {
+    function syncCanvasSize() {
       const rect = canvas.getBoundingClientRect();
       cssWidth = Math.max(1, rect.width);
       cssHeight = Math.max(1, rect.height);
 
-      // Keep the canvas crisp without allowing very high DPR devices
-      // to multiply the starfield backing store excessively.
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       const pixelWidth = Math.max(1, Math.round(cssWidth * dpr));
       const pixelHeight = Math.max(1, Math.round(cssHeight * dpr));
@@ -155,88 +159,107 @@ export function useStarfield(ref: RefObject<HTMLCanvasElement>) {
         canvas.height = pixelHeight;
       }
 
-      // Continue drawing in CSS-pixel coordinates.
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
 
-    const drawFrame = (time: number) => {
+    function drawCoverImage(time: number) {
+      if (!imageReady) return;
+
+      const imageWidth = nebulaImage.naturalWidth || 1;
+      const imageHeight = nebulaImage.naturalHeight || 1;
+
+      // Oversize slightly so the plate can drift a few pixels.
+      const baseScale = Math.max(cssWidth / imageWidth, cssHeight / imageHeight) * 1.045;
+      const driftX = reduceMotion ? 0 : Math.sin(time * 0.00009) * 8;
+      const driftY = reduceMotion ? 0 : Math.cos(time * 0.00007) * 10;
+
+      const drawWidth = imageWidth * baseScale;
+      const drawHeight = imageHeight * baseScale;
+      const x = (cssWidth - drawWidth) * 0.5 + driftX;
+      const y = (cssHeight - drawHeight) * 0.5 + driftY;
+
+      ctx.save();
+      ctx.globalAlpha = 0.50;
+      ctx.drawImage(nebulaImage, x, y, drawWidth, drawHeight);
+      ctx.restore();
+
+      // Gentle dark wash so the image reads as atmosphere rather than wallpaper.
+      ctx.fillStyle = "rgba(4,5,10,0.22)";
+      ctx.fillRect(0, 0, cssWidth, cssHeight);
+
+      // Preserve a subtle open center so the constellation remains legible.
+      const centerWash = ctx.createRadialGradient(
+        cssWidth * 0.5,
+        cssHeight * 0.46,
+        0,
+        cssWidth * 0.5,
+        cssHeight * 0.46,
+        Math.max(cssWidth, cssHeight) * 0.52,
+      );
+      centerWash.addColorStop(0, "rgba(5,5,10,0)");
+      centerWash.addColorStop(0.72, "rgba(5,5,10,0.05)");
+      centerWash.addColorStop(1, "rgba(5,5,10,0.16)");
+      ctx.fillStyle = centerWash;
+      ctx.fillRect(0, 0, cssWidth, cssHeight);
+
+      // Additional readability wash for the upper system band, especially
+      // around Case Studies where the nebula plate is brightest.
+      const upperReadabilityWash = ctx.createRadialGradient(
+        cssWidth * 0.34,
+        cssHeight * 0.29,
+        0,
+        cssWidth * 0.34,
+        cssHeight * 0.29,
+        Math.max(cssWidth, cssHeight) * 0.32,
+      );
+      upperReadabilityWash.addColorStop(0, "rgba(5,5,10,0.16)");
+      upperReadabilityWash.addColorStop(0.48, "rgba(5,5,10,0.10)");
+      upperReadabilityWash.addColorStop(1, "rgba(5,5,10,0)");
+      ctx.fillStyle = upperReadabilityWash;
+      ctx.fillRect(0, 0, cssWidth, cssHeight);
+    }
+
+    function drawFrame(time: number) {
       ctx.clearRect(0, 0, cssWidth, cssHeight);
       ctx.fillStyle = T.bg;
       ctx.fillRect(0, 0, cssWidth, cssHeight);
 
-      // Map the original atmosphere anchors proportionally into the
-      // environmental viewport. At 390×844 these resolve exactly to
-      // the original authored values.
-      const scaleX = cssWidth / W;
-      const scaleY = cssHeight / H;
-      const radiusScale = Math.min(scaleX, scaleY);
-
-      const nexusX = NEXUS.x * scaleX;
-      const nexusY = NEXUS.y * scaleY;
-      const ng = ctx.createRadialGradient(
-        nexusX,
-        nexusY,
-        0,
-        nexusX,
-        nexusY,
-        310 * radiusScale,
-      );
-      ng.addColorStop(0,    "rgba(138,174,200,0.042)");
-      ng.addColorStop(0.30, "rgba(166,139,212,0.028)");
-      ng.addColorStop(0.60, "rgba(106,184,138,0.014)");
-      ng.addColorStop(1,    "transparent");
-      ctx.fillStyle = ng;
-      ctx.fillRect(0, 0, cssWidth, cssHeight);
-
-      const frameworkX = 195 * scaleX;
-      const frameworkY = 590 * scaleY;
-      const fg = ctx.createRadialGradient(
-        frameworkX,
-        frameworkY,
-        0,
-        frameworkX,
-        frameworkY,
-        190 * radiusScale,
-      );
-      fg.addColorStop(0, "rgba(106,184,138,0.032)");
-      fg.addColorStop(1, "transparent");
-      ctx.fillStyle = fg;
-      ctx.fillRect(0, 0, cssWidth, cssHeight);
-
-      const upperX = 195 * scaleX;
-      const upperY = 155 * scaleY;
-      const ug = ctx.createRadialGradient(
-        upperX,
-        upperY,
-        0,
-        upperX,
-        upperY,
-        200 * radiusScale,
-      );
-      ug.addColorStop(0,   "rgba(166,139,212,0.022)");
-      ug.addColorStop(0.5, "rgba(138,174,200,0.014)");
-      ug.addColorStop(1,   "transparent");
-      ctx.fillStyle = ug;
-      ctx.fillRect(0, 0, cssWidth, cssHeight);
+      drawCoverImage(time);
 
       for (const s of stars) {
         const tw = reduceMotion
           ? 0
           : Math.sin(time * s.spd + s.phase) * 0.22;
-        const opacity = Math.max(0.04, Math.min(0.88, s.base + tw));
+        const opacity = Math.max(0.03, Math.min(0.92, s.base + tw));
+        const radius = s.hero && !reduceMotion
+          ? s.r * (1 + Math.max(0, Math.sin(time * s.spd + s.phase)) * 0.22)
+          : s.r;
+
+        const x = s.nx * cssWidth;
+        const y = s.ny * cssHeight;
 
         ctx.beginPath();
-        ctx.arc(
-          s.nx * cssWidth,
-          s.ny * cssHeight,
-          s.r,
-          0,
-          Math.PI * 2,
-        );
+        ctx.arc(x, y, radius, 0, Math.PI * 2);
         ctx.fillStyle = s.gold
           ? `rgba(232,213,163,${opacity})`
-          : `rgba(210,218,232,${opacity * 0.72})`;
+          : `rgba(225,233,244,${opacity * 0.72})`;
         ctx.fill();
+
+        if (s.hero && opacity > 0.50) {
+          const flare = (opacity - 0.50) / 0.35;
+          ctx.save();
+          ctx.strokeStyle = s.gold
+            ? `rgba(232,213,163,${flare * 0.18})`
+            : `rgba(199,217,247,${flare * 0.16})`;
+          ctx.lineWidth = 0.45;
+          ctx.beginPath();
+          ctx.moveTo(x - 4.5, y);
+          ctx.lineTo(x + 4.5, y);
+          ctx.moveTo(x, y - 4.5);
+          ctx.lineTo(x, y + 4.5);
+          ctx.stroke();
+          ctx.restore();
+        }
       }
     }
 
@@ -244,6 +267,21 @@ export function useStarfield(ref: RefObject<HTMLCanvasElement>) {
       syncCanvasSize();
       if (reduceMotion) drawFrame(0);
     }
+
+    function renderInitialIfReady() {
+      syncCanvasSize();
+      drawFrame(t);
+    }
+
+    nebulaImage.onload = () => {
+      imageReady = true;
+      renderInitialIfReady();
+    };
+
+    nebulaImage.onerror = () => {
+      imageReady = false;
+      renderInitialIfReady();
+    };
 
     syncCanvasSize();
     window.addEventListener("resize", handleResize);

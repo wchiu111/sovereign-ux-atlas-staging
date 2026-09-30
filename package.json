@@ -8,6 +8,7 @@
     "dev": "vite",
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.server.json",
     "test:search": "node tests/atlas-search.test.mjs",
+    "test:mobile-search": "node tests/mobile-atlas-search.test.mjs",
     "test:routes": "node tests/atlas-routes.test.mjs",
     "test:case-studies": "node tests/case-study-metadata.test.mjs",
     "test:seo": "node tests/seo-static-output.test.mjs",

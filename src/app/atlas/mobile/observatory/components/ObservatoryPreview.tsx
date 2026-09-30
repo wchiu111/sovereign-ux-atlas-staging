@@ -1,4 +1,5 @@
 import { T } from "../../components/mobileShared";
+import AtlasOverviewDrawer from "../../overview/AtlasOverviewDrawer";
 import type { ObservatoryHotspotDefinition } from "../observatoryTypes";
 
 export default function ObservatoryPreview({
@@ -9,90 +10,77 @@ export default function ObservatoryPreview({
   onExplore: () => void;
 }) {
   return (
-    <section
+    <div
       aria-label={`${hotspot.label} preview`}
       data-observatory-interactive="true"
       onPointerDown={(event) => event.stopPropagation()}
       style={{
         position: "absolute",
-        left: 18,
-        right: 18,
-        bottom: "calc(22px + env(safe-area-inset-bottom, 0px))",
+        inset: 0,
         zIndex: 18,
-        pointerEvents: "auto",
-        overflow: "hidden",
-        border: `0.5px solid ${hotspot.color}55`,
-        borderRadius: 5,
-        background:
-          "linear-gradient(180deg, rgba(6,8,14,0.88), rgba(4,6,11,0.96))",
-        backdropFilter: "blur(18px)",
-        WebkitBackdropFilter: "blur(18px)",
-        boxShadow: `0 18px 46px rgba(0,0,0,0.34), 0 0 34px ${hotspot.color}0E`,
+        pointerEvents: "none",
         animation:
           "observatoryMobilePreviewIn 320ms cubic-bezier(0.16,1,0.3,1) both",
       }}
     >
-      <div style={{ padding: "15px 16px 13px" }}>
+      <AtlasOverviewDrawer
+        title={hotspot.label}
+        titleColor={hotspot.color}
+        color={hotspot.color}
+        countLabel={hotspot.eyebrow.toUpperCase()}
+        phase="open"
+        arrivalVisible
+        reducedMotion={false}
+        closeDurationMs={320}
+        reducedDurationMs={160}
+        compact
+        footer={
+          <button
+            type="button"
+            onClick={onExplore}
+            aria-label={
+              hotspot.id === "atlas"
+                ? "Enter Atlas"
+                : `Explore ${hotspot.label}`
+            }
+            className="observatory-mobile-focusable"
+            style={{
+              minHeight: 52,
+              width: "100%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              border: "none",
+              background: "transparent",
+              padding: "0 12px",
+              fontFamily: T.mono,
+              fontSize: 12.5,
+              letterSpacing: "0.14em",
+              color: hotspot.color,
+              opacity: 0.98,
+              cursor: "pointer",
+              borderRadius: 3,
+              WebkitTapHighlightColor: "transparent",
+              touchAction: "manipulation",
+            }}
+          >
+            {hotspot.id === "atlas" ? "ENTER ATLAS →" : "EXPLORE →"}
+          </button>
+        }
+      >
         <div
           style={{
-            fontFamily: T.mono,
-            fontSize: 7,
-            letterSpacing: "0.18em",
-            textTransform: "uppercase",
-            color: hotspot.color,
-            opacity: 0.78,
-          }}
-        >
-          {hotspot.eyebrow}
-        </div>
-
-        <div
-          style={{
-            marginTop: 7,
             fontFamily: T.serif,
-            fontSize: 22,
-            lineHeight: 1.05,
+            fontSize: 14.5,
             color: "#F0E9D8",
-          }}
-        >
-          {hotspot.label
-            .toLowerCase()
-            .replace(/\b\w/g, (letter) => letter.toUpperCase())}
-        </div>
-
-        <p
-          style={{
-            margin: "9px 0 0",
-            fontFamily: T.serif,
-            fontSize: 14,
-            lineHeight: 1.45,
-            color: T.body,
-            opacity: 0.76,
+            opacity: 0.90,
+            lineHeight: 1.56,
+            margin: 0,
           }}
         >
           {hotspot.description}
-        </p>
-      </div>
-
-      <button
-        type="button"
-        onClick={onExplore}
-        className="observatory-mobile-focusable"
-        style={{
-          minHeight: 48,
-          width: "100%",
-          border: 0,
-          borderTop: `0.5px solid ${hotspot.color}2B`,
-          background: "transparent",
-          fontFamily: T.mono,
-          fontSize: 8,
-          letterSpacing: "0.18em",
-          color: hotspot.color,
-          cursor: "pointer",
-        }}
-      >
-        {hotspot.id === "atlas" ? "ENTER ATLAS →" : "EXPLORE →"}
-      </button>
-    </section>
+        </div>
+      </AtlasOverviewDrawer>
+    </div>
   );
 }

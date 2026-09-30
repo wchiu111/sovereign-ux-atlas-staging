@@ -1,4 +1,5 @@
 import {
+  useEffect,
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
@@ -17,9 +18,15 @@ function clamp01(value: number) {
 
 export default function ObservatorySwipeEntry({
   disabled = false,
+  visible = true,
+  fadeInDurationMs = 520,
+  fadeInDelayMs = 0,
   onCommit,
 }: {
   disabled?: boolean;
+  visible?: boolean;
+  fadeInDurationMs?: number;
+  fadeInDelayMs?: number;
   onCommit: () => void;
 }) {
   const [progress, setProgress] = useState(0);
@@ -30,6 +37,16 @@ export default function ObservatorySwipeEntry({
   const pointerIdRef = useRef<number | null>(null);
   const movedRef = useRef(false);
   const suppressClickRef = useRef(false);
+
+  useEffect(() => {
+    if (visible) return;
+
+    pointerIdRef.current = null;
+    movedRef.current = false;
+    suppressClickRef.current = false;
+    setDragging(false);
+    setProgress(0);
+  }, [visible]);
 
   const reset = () => {
     pointerIdRef.current = null;
@@ -145,11 +162,16 @@ export default function ObservatorySwipeEntry({
         borderRadius: 10,
         background: "transparent",
         padding: 0,
-        cursor: disabled ? "default" : "ns-resize",
+        cursor:
+          !visible || disabled ? "default" : "ns-resize",
         touchAction: "none",
-        pointerEvents: "auto",
+        pointerEvents:
+          visible && !disabled ? "auto" : "none",
         WebkitTapHighlightColor: "transparent",
-        opacity: disabled ? 0.35 : 1,
+        opacity: visible ? 1 : 0,
+        transition: visible
+          ? `opacity ${fadeInDurationMs}ms cubic-bezier(0.22,1,0.36,1) ${fadeInDelayMs}ms`
+          : "opacity 180ms ease",
       }}
     >
       <span
@@ -157,7 +179,7 @@ export default function ObservatorySwipeEntry({
         style={{
           position: "absolute",
           left: "50%",
-          top: 8,
+          top: 2,
           width: 38 + progress * 32,
           height: 38 + progress * 32,
           transform: `translate(-50%, ${-progress * 17}px)`,
@@ -179,7 +201,7 @@ export default function ObservatorySwipeEntry({
         style={{
           position: "absolute",
           left: "50%",
-          top: 15,
+          top: 9,
           width: 0.5,
           height: 18 + progress * 27,
           transform: `translate(-50%, ${-progress * 16}px)`,
@@ -202,7 +224,7 @@ export default function ObservatorySwipeEntry({
         style={{
           position: "absolute",
           left: "50%",
-          top: 27,
+          top: 21,
           width: 7,
           height: 7,
           transform: `translate(-50%, ${-progress * 34}px) rotate(45deg)`,
@@ -233,7 +255,7 @@ export default function ObservatorySwipeEntry({
           lineHeight: 1.1,
           letterSpacing: "0.20em",
           color: T.identityGold,
-          opacity: 0.70 + progress * 0.22,
+          opacity: 0.52 + progress * 0.30,
           transform: `translateY(${progress * 2}px)`,
           textAlign: "center",
           transition: dragging

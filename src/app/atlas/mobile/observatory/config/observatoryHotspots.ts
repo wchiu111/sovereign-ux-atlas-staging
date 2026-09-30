@@ -3,14 +3,8 @@ import type { ObservatoryHotspotDefinition } from "../observatoryTypes";
 /**
  * Portrait-authored interaction coordinates for the 390 × 844 mobile stage.
  *
- * These values reflect the latest Figma Observatory composition:
- * - Enter Atlas centered in the upper field
- * - Journey / Contact anchored to the left environment
- * - Philosophy anchored to the right environment
- * - About Wilson centered on the floor axis
- *
- * Labels are authored independently from node centers so they can align to the
- * environmental objects without relying on connector lines.
+ * Labels use a shared 30px vertical gap below their node centers.
+ * About Wilson established the spacing reference for the Observatory system.
  */
 export const OBSERVATORY_HOTSPOTS: readonly ObservatoryHotspotDefinition[] = [
   {
@@ -22,7 +16,7 @@ export const OBSERVATORY_HOTSPOTS: readonly ObservatoryHotspotDefinition[] = [
     x: 79,
     y: 313,
     labelX: 70,
-    labelY: 334,
+    labelY: 343,
     align: "left",
     camera: {
       translateX: 22,
@@ -39,7 +33,7 @@ export const OBSERVATORY_HOTSPOTS: readonly ObservatoryHotspotDefinition[] = [
     x: 116,
     y: 435,
     labelX: 116,
-    labelY: 456,
+    labelY: 465,
     align: "center",
     camera: {
       translateX: 18,
@@ -73,7 +67,7 @@ export const OBSERVATORY_HOTSPOTS: readonly ObservatoryHotspotDefinition[] = [
     x: 316,
     y: 443,
     labelX: 274,
-    labelY: 407,
+    labelY: 473,
     align: "left",
     camera: {
       translateX: -20,
@@ -90,7 +84,7 @@ export const OBSERVATORY_HOTSPOTS: readonly ObservatoryHotspotDefinition[] = [
     x: 196,
     y: 256,
     labelX: 196,
-    labelY: 280,
+    labelY: 286,
     align: "center",
     camera: {
       translateX: -24,

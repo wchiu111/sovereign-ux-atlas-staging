@@ -153,7 +153,7 @@ export default function useCaseStudiesChoreography({
       };
     }
 
-    if (state !== "atlas-landing") {
+    if (state === "system-overview") {
       entryTimersRef.current.forEach(window.clearTimeout);
       entryTimersRef.current = [];
       setEntryPhase("idle");

@@ -35,6 +35,17 @@ export default function ObservatoryHotspot({
       ? "right"
       : "left";
 
+  const backdropCenterX =
+    hotspot.align === "center"
+      ? 26
+      : hotspot.align === "right"
+      ? labelLocalX - LABEL_WIDTH * 0.28
+      : labelLocalX + LABEL_WIDTH * 0.28;
+
+  const backdropCenterY = 26 + (labelLocalY - 26) * 0.22;
+  const backdropWidth = hotspot.align === "center" ? 150 : 164;
+  const backdropHeight = 78;
+
   return (
     <button
       type="button"
@@ -56,10 +67,33 @@ export default function ObservatoryHotspot({
         background: "transparent",
         cursor: disabled ? "default" : "pointer",
         opacity: subdued ? 0.42 : 1,
-        transition: "opacity 240ms ease, filter 240ms ease",
+        transform:
+          selected && hotspot.id === "about"
+            ? "translateY(-20px)"
+            : "translateY(0)",
+        transition:
+          "transform 280ms cubic-bezier(0.22,1,0.36,1), opacity 240ms ease, filter 240ms ease",
         WebkitTapHighlightColor: "transparent",
       }}
     >
+      <span
+        aria-hidden="true"
+        style={{
+          position: "absolute",
+          left: backdropCenterX,
+          top: backdropCenterY,
+          width: backdropWidth,
+          height: backdropHeight,
+          transform: "translate(-50%, -50%)",
+          borderRadius: 999,
+          background:
+            "radial-gradient(ellipse at center, rgba(0,0,0,0.25) 0%, rgba(0,0,0,0.16) 45%, rgba(0,0,0,0.08) 62%, rgba(0,0,0,0) 78%)",
+          opacity: selected ? 0.96 : 0.9,
+          pointerEvents: "none",
+          transition: "opacity 240ms ease",
+        }}
+      />
+
       <span
         aria-hidden
         style={{
