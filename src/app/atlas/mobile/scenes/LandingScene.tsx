@@ -70,6 +70,8 @@ interface LandingSceneProps {
   onOverviewExpand: () => void;
   onBack: () => void;
   onOverviewBack: () => void;
+  initialCaseStudySelectionId?: (typeof CASE_STUDY_FOCUS_ITEMS)[number]["id"];
+  onCaseStudyOverviewSelect?: (id: (typeof CASE_STUDY_FOCUS_ITEMS)[number]["id"]) => void;
   onSelectProject?: (projectId: (typeof CASE_STUDY_PROJECTS)[number]["id"]) => void;
   returnProjectId?: (typeof CASE_STUDY_PROJECTS)[number]["id"] | null;
   onReturnProjectComplete?: () => void;
@@ -86,6 +88,8 @@ export default function LandingScene({
   onOverviewExpand,
   onBack,
   onOverviewBack,
+  initialCaseStudySelectionId = "case-studies",
+  onCaseStudyOverviewSelect,
   onSelectProject,
   returnProjectId = null,
   onReturnProjectComplete,
@@ -146,7 +150,9 @@ export default function LandingScene({
   } = useCaseStudiesChoreography({
     state,
     returnProjectId,
+    initialSelectionId: initialCaseStudySelectionId,
     onSelectCaseStudies,
+    onOverviewSelection: onCaseStudyOverviewSelect,
     onSelectProject,
     onReturnProjectComplete,
     onBack,

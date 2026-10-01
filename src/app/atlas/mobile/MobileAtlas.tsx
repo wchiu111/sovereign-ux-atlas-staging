@@ -43,6 +43,13 @@ import {
 import {
   DEFAULT_MOBILE_EXPERIMENT_ID,
 } from "./experiments/config/experimentsContent";
+import {
+  mobileDestinationFromPath,
+  mobileOverviewDestinationPath,
+  type MobileAtlasOverviewDestination,
+  type MobileAtlasRouteDestination,
+} from "./mobileRouteState";
+import { pushAtlasPath } from "../../routing/atlasRoutes";
 
 type AtlasRuntimeState =
   | MobileState
@@ -137,13 +144,58 @@ export default function MobileAtlas() {
   const [observatoryScale, setObservatoryScale] = useState(1);
   const [viewportUiTarget, setViewportUiTarget] =
     useState<HTMLDivElement | null>(null);
-  const [state, setStateRaw] =
-    useState<AtlasRuntimeState>("atlas-landing");
+  const initialRouteDestinationRef = useRef<
+    MobileAtlasRouteDestination | null
+  >(null);
+  if (initialRouteDestinationRef.current === null) {
+    initialRouteDestinationRef.current = mobileDestinationFromPath(
+      window.location.pathname,
+      window.location.hash,
+    );
+  }
+  const initialRouteDestination = initialRouteDestinationRef.current;
+  const initialOverviewDestination =
+    initialRouteDestination?.kind === "deeper"
+      ? null
+      : initialRouteDestination;
+
+  const [state, setStateRaw] = useState<AtlasRuntimeState>(() => {
+    if (initialOverviewDestination?.kind === "case-studies") {
+      return "system-awakened";
+    }
+    if (initialOverviewDestination?.kind === "frameworks") {
+      return "frameworks-focus";
+    }
+    if (initialOverviewDestination?.kind === "experiments") {
+      return "experiments-focus";
+    }
+    return "atlas-landing";
+  });
+  const historyRestorationRef = useRef(false);
+  const [caseStudiesRestoreKey, setCaseStudiesRestoreKey] = useState(0);
+  const [frameworksRestoreKey, setFrameworksRestoreKey] = useState(0);
+  const [experimentsRestoreKey, setExperimentsRestoreKey] = useState(0);
+
+  const initialCaseStudySelectionId =
+    initialOverviewDestination?.kind === "case-studies"
+      ? initialOverviewDestination.id
+      : "case-studies";
+  const [caseStudyRestoredSelectionId, setCaseStudyRestoredSelectionId] =
+    useState(initialCaseStudySelectionId);
 
   const [activeFrameworkId, setActiveFrameworkId] =
-    useState<MobileFrameworkId>(DEFAULT_MOBILE_FRAMEWORK_ID);
+    useState<MobileFrameworkId>(() =>
+      initialOverviewDestination?.kind === "frameworks" &&
+      initialOverviewDestination.id !== "frameworks"
+        ? initialOverviewDestination.id as MobileFrameworkId
+        : DEFAULT_MOBILE_FRAMEWORK_ID,
+    );
   const [frameworkOverviewSelectionId, setFrameworkOverviewSelectionId] =
-    useState<FrameworkOverviewId>("frameworks");
+    useState<FrameworkOverviewId>(() =>
+      initialOverviewDestination?.kind === "frameworks"
+        ? initialOverviewDestination.id as FrameworkOverviewId
+        : "frameworks",
+    );
   const [activeFrameworkSectionId, setActiveFrameworkSectionId] =
     useState<string>("governance");
   const [activeFrameworkEvidenceId, setActiveFrameworkEvidenceId] =
@@ -161,17 +213,43 @@ export default function MobileAtlas() {
     useState<MobileCaseStudyProjectId | null>(null);
 
   const [activeExperimentId, setActiveExperimentId] =
-    useState<MobileExperimentId>(DEFAULT_MOBILE_EXPERIMENT_ID);
+    useState<MobileExperimentId>(() =>
+      initialOverviewDestination?.kind === "experiments" &&
+      initialOverviewDestination.id !== "experiments"
+        ? initialOverviewDestination.id as MobileExperimentId
+        : DEFAULT_MOBILE_EXPERIMENT_ID,
+    );
   const [returnExperimentId, setReturnExperimentId] =
     useState<MobileExperimentId | null>(null);
   const [initialExperimentSearchId, setInitialExperimentSearchId] =
-    useState<MobileExperimentId | null>(null);
+    useState<MobileExperimentId | null>(() =>
+      initialOverviewDestination?.kind === "experiments" &&
+      initialOverviewDestination.id !== "experiments"
+        ? initialOverviewDestination.id as MobileExperimentId
+        : null,
+    );
   const [returningExperimentsToAtlas, setReturningExperimentsToAtlas] =
     useState(false);
+  const pendingExperimentRouteIdRef =
+    useRef<"experiments" | MobileExperimentId>("experiments");
+
+  const pushMobileDestination = useCallback(
+    (destination: MobileAtlasOverviewDestination) => {
+      if (historyRestorationRef.current) return;
+      const path = mobileOverviewDestinationPath(destination);
+      if (path) pushAtlasPath(path);
+    },
+    [],
+  );
 
   const completeExperimentAtlasEntry = useCallback(() => {
     setStateRaw("experiments-focus");
-  }, []);
+    pushMobileDestination({
+      kind: "experiments",
+      id: pendingExperimentRouteIdRef.current,
+    });
+    pendingExperimentRouteIdRef.current = "experiments";
+  }, [pushMobileDestination]);
 
   const completeExperimentAtlasReturn = useCallback(() => {
     setReturningExperimentsToAtlas(false);
@@ -341,6 +419,7 @@ export default function MobileAtlas() {
       if (destination.kind === "experiments") {
         setReturningExperimentsToAtlas(false);
         setReturnExperimentId(null);
+        pendingExperimentRouteIdRef.current = destination.id;
 
         if (destination.id === "experiments") {
           setInitialExperimentSearchId(null);
@@ -405,6 +484,74 @@ export default function MobileAtlas() {
       setStateRaw("atlas-landing");
     }
   }
+
+  const restoreMobileDestination = useCallback(
+    (destination: MobileAtlasOverviewDestination) => {
+      historyRestorationRef.current = true;
+      setObservatoryPhase("closed");
+      setPendingObservatoryDestinationId(null);
+
+      if (destination.kind === "atlas") {
+        setActiveCaseStudyProjectId(null);
+        setReturnCaseStudyProjectId(null);
+        setReturningFrameworksToAtlas(false);
+        setReturningExperimentsToAtlas(false);
+        setStateRaw("atlas-landing");
+      } else if (destination.kind === "case-studies") {
+        setCaseStudyRestoredSelectionId(destination.id);
+        setActiveCaseStudyProjectId(null);
+        setReturnCaseStudyProjectId(null);
+        setStateRaw("system-awakened");
+        setCaseStudiesRestoreKey((key) => key + 1);
+      } else if (destination.kind === "frameworks") {
+        const selectionId = destination.id as FrameworkOverviewId;
+        setFrameworkOverviewSelectionId(selectionId);
+        setReturnFrameworkId(null);
+        setReturningFrameworksToAtlas(false);
+        if (selectionId !== "frameworks") {
+          const frameworkId = selectionId as MobileFrameworkId;
+          const framework = mobileFrameworkFor(frameworkId);
+          setActiveFrameworkId(frameworkId);
+          setActiveFrameworkSectionId(framework.sections[0]?.id ?? "");
+          setActiveFrameworkEvidenceId(null);
+        }
+        setStateRaw("frameworks-focus");
+        setFrameworksRestoreKey((key) => key + 1);
+      } else {
+        const selectionId = destination.id;
+        setReturnExperimentId(null);
+        setReturningExperimentsToAtlas(false);
+        if (selectionId === "experiments") {
+          setInitialExperimentSearchId(null);
+        } else {
+          const experimentId = selectionId as MobileExperimentId;
+          setActiveExperimentId(experimentId);
+          setInitialExperimentSearchId(experimentId);
+        }
+        setStateRaw("experiments-focus");
+        setExperimentsRestoreKey((key) => key + 1);
+      }
+
+      requestAnimationFrame(() => {
+        historyRestorationRef.current = false;
+      });
+    },
+    [],
+  );
+
+  useEffect(() => {
+    const handlePopState = () => {
+      const destination = mobileDestinationFromPath(
+        window.location.pathname,
+        window.location.hash,
+      );
+      if (!destination || destination.kind === "deeper") return;
+      restoreMobileDestination(destination);
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [restoreMobileDestination]);
 
   const isLanding =
     (LANDING_STATES as readonly string[]).includes(state);
@@ -627,15 +774,29 @@ export default function MobileAtlas() {
                 }}
               >
               <LandingScene
+                key={`case-studies-${caseStudiesRestoreKey}`}
                 state={
                   state as
                     | "atlas-landing"
                     | "system-awakened"
                     | "system-overview"
                 }
-                onSelectCaseStudies={() =>
-                  setState("system-awakened")
+                initialCaseStudySelectionId={
+                  caseStudyRestoredSelectionId as
+                    | "case-studies"
+                    | MobileCaseStudyProjectId
                 }
+                onSelectCaseStudies={() => {
+                  setState("system-awakened");
+                  pushMobileDestination({
+                    kind: "case-studies",
+                    id: "case-studies",
+                  });
+                }}
+                onCaseStudyOverviewSelect={(id) => {
+                  setCaseStudyRestoredSelectionId(id);
+                  pushMobileDestination({ kind: "case-studies", id });
+                }}
                 onSelectFrameworks={() => {
                   setReturningFrameworksToAtlas(false);
                   setReturnFrameworkId(null);
@@ -658,6 +819,10 @@ export default function MobileAtlas() {
 
                   pendingFrameworkSearchIdRef.current = null;
                   setState("frameworks-focus");
+                  pushMobileDestination({
+                    kind: "frameworks",
+                    id: searchTarget,
+                  });
                 }}
                 onOverviewExpand={() =>
                   setState("system-overview")
@@ -686,6 +851,7 @@ export default function MobileAtlas() {
                   setActiveCaseStudyProjectId(null);
                   setReturnCaseStudyProjectId(null);
                   setState("atlas-landing");
+                  pushMobileDestination({ kind: "atlas" });
                 }}
               />
               </div>
@@ -700,6 +866,7 @@ export default function MobileAtlas() {
                   setReturningExperimentsToAtlas(false);
                   setReturnExperimentId(null);
                   setInitialExperimentSearchId(null);
+                  pendingExperimentRouteIdRef.current = "experiments";
                   enterExperiments();
                 }}
                 disabled={
@@ -840,6 +1007,7 @@ export default function MobileAtlas() {
 
             {isFW && !isFrameworkReadingDepth && (
               <FrameworksScene
+                key={`frameworks-${frameworksRestoreKey}`}
                 state="frameworks-focus"
                 activeFrameworkId={activeFrameworkId}
                 overviewSelectionId={frameworkOverviewSelectionId}
@@ -855,10 +1023,18 @@ export default function MobileAtlas() {
                   );
                   setActiveFrameworkEvidenceId(null);
                   setFrameworkOverviewSelectionId(frameworkId);
+                  pushMobileDestination({
+                    kind: "frameworks",
+                    id: frameworkId,
+                  });
                 }}
                 onSelectParent={() => {
                   setReturnFrameworkId(null);
                   setFrameworkOverviewSelectionId("frameworks");
+                  pushMobileDestination({
+                    kind: "frameworks",
+                    id: "frameworks",
+                  });
                 }}
                 onExplore={() => {
                   setReturnFrameworkId(null);
@@ -883,12 +1059,14 @@ export default function MobileAtlas() {
                   setFrameworkOverviewSelectionId("frameworks");
                   setReturningFrameworksToAtlas(true);
                   setState("atlas-landing");
+                  pushMobileDestination({ kind: "atlas" });
                 }}
               />
             )}
 
             {isExperimentsOverview && (
               <ExperimentsScene
+                key={`experiments-${experimentsRestoreKey}`}
                 state="experiments-focus"
                 activeExperimentId={activeExperimentId}
                 initialExperimentId={initialExperimentSearchId}
@@ -898,6 +1076,12 @@ export default function MobileAtlas() {
                   setInitialExperimentSearchId(null);
                   setReturnExperimentId(null);
                   setActiveExperimentId(experimentId);
+                }}
+                onOverviewSelection={(id) => {
+                  pushMobileDestination({
+                    kind: "experiments",
+                    id,
+                  });
                 }}
                 onExplore={(experimentId) => {
                   setInitialExperimentSearchId(null);
@@ -913,6 +1097,7 @@ export default function MobileAtlas() {
                   setReturnExperimentId(null);
                   setReturningExperimentsToAtlas(true);
                   setState("atlas-landing");
+                  pushMobileDestination({ kind: "atlas" });
                 }}
               />
             )}

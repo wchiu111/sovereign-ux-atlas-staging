@@ -57,6 +57,7 @@ const ROUTABLE_CATEGORIES: RoutableAtlasCategory[] = [
 export interface AtlasRoute {
   atlasState: AtlasState;
   canonicalPath: string;
+  entryRouteId?: string;
   sectionId?: string;
   evidenceId?: string;
   observatory?: {
@@ -305,6 +306,7 @@ export function parseAtlasRoute(
         drawerOpen: true,
       }),
       canonicalPath: canonicalBase,
+      entryRouteId: publicSlug(entry),
     };
   }
 
@@ -342,6 +344,7 @@ export function parseAtlasRoute(
     canonicalPath: evidenceId
       ? atlasEntryEvidencePath(entry.id, section.id, evidenceId)!
       : atlasEntrySectionPath(entry.id, section.id)!,
+    entryRouteId: publicSlug(entry),
     sectionId: section.id,
     evidenceId,
   };
