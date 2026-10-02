@@ -11,6 +11,7 @@ export default function useConstellationChoreography<
   returnItemId = null,
   initialItemId = null,
   onCommit,
+  onSelection,
   onReturnComplete,
 }: {
   parentId: TParentId;
@@ -18,6 +19,7 @@ export default function useConstellationChoreography<
   returnItemId?: TItemId | null;
   initialItemId?: TItemId | null;
   onCommit: (id: TItemId) => void;
+  onSelection?: (id: TParentId | TItemId) => void;
   onReturnComplete?: () => void;
 }) {
   type OverviewId = TParentId | TItemId;
@@ -266,6 +268,7 @@ export default function useConstellationChoreography<
     }
 
     setSelectedId(id);
+    onSelection?.(id);
     setDrawerPhase("closing");
 
     const closeDuration = prefersReducedMotion

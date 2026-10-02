@@ -29,12 +29,18 @@ interface ObservatorySceneProps {
   onReturnToAtlas: () => void;
   presentationScale: number;
   initialDestinationId?: ObservatoryPanelId | null;
+  routeRestoreKey?: number;
+  onPanelCommit?: (id: ObservatoryPanelId) => void;
+  onPanelClose?: (id: ObservatoryPanelId) => void;
 }
 
 export default function ObservatoryScene({
   onReturnToAtlas,
   presentationScale,
   initialDestinationId = null,
+  routeRestoreKey = 0,
+  onPanelCommit,
+  onPanelClose,
 }: ObservatorySceneProps) {
   const [selected, setSelected] =
     useState<ObservatoryDestinationId | null>(null);
@@ -63,12 +69,10 @@ export default function ObservatoryScene({
   }, []);
 
   useEffect(() => {
-    if (!initialDestinationId) return;
-
-    setHasInteracted(true);
+    if (initialDestinationId) setHasInteracted(true);
     setSelected(initialDestinationId);
     setActive(initialDestinationId);
-  }, [initialDestinationId]);
+  }, [initialDestinationId, routeRestoreKey]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -76,14 +80,7 @@ export default function ObservatoryScene({
 
       if (active) {
         event.preventDefault();
-        setActive(null);
-        requestAnimationFrame(() => {
-          document
-            .querySelector<HTMLElement>(
-              `[data-observatory-hotspot="${active}"]`,
-            )
-            ?.focus({ preventScroll: true });
-        });
+        closeFocus();
         return;
       }
 
@@ -114,6 +111,7 @@ export default function ObservatoryScene({
 
     setSelected(id);
     setActive(id);
+    onPanelCommit?.(id);
   }
 
   function selectHotspot(id: ObservatoryDestinationId) {
@@ -132,6 +130,7 @@ export default function ObservatoryScene({
     setActive(null);
 
     if (previous) {
+      onPanelClose?.(previous);
       window.setTimeout(
         () => {
           document

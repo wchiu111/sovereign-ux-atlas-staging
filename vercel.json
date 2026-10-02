@@ -6,6 +6,6 @@
   "installCommand": "npm install",
   "routes": [
     { "handle": "filesystem" },
-    { "src": "/(?:case-studies|experiments|frameworks|case-study|experiment|framework)(?:/.*)?", "dest": "/app-shell.html" }
+    { "src": "/(?:case-studies|experiments|frameworks|observatory|case-study|experiment|framework)(?:/.*)?", "dest": "/app-shell.html" }
   ]
 }

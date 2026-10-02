@@ -36,17 +36,20 @@ function FrameworkReadingSurface({
   setActiveSectionId,
   onCanvas,
   onBack,
+  routeRestoreKey,
 }: {
   framework: MobileFrameworkDocument;
   activeSectionId: string;
   setActiveSectionId: (id: string) => void;
   onCanvas: (evidenceId: string) => void;
   onBack: () => void;
+  routeRestoreKey: number;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const chromeRef = useRef<HTMLDivElement>(null);
   const sectionRefs = useRef(new Map<string, HTMLElement>());
   const buttonRefs = useRef(new Map<string, HTMLButtonElement>());
+  const restoringRouteRef = useRef(true);
 
   const [chromeHeight, setChromeHeight] = useState(114);
   const [headerElevated, setHeaderElevated] = useState(false);
@@ -58,10 +61,31 @@ function FrameworkReadingSurface({
   );
 
   useEffect(() => {
-    const firstId = framework.sections[0]?.id ?? "";
-    setActiveSectionId(firstId);
-    scrollRef.current?.scrollTo({ top: 0, behavior: "auto" });
-  }, [framework.id, framework.sections, setActiveSectionId]);
+    restoringRouteRef.current = true;
+    const positionRequestedSection = () => {
+      const node = sectionRefs.current.get(activeSectionId);
+      const scroller = scrollRef.current;
+      if (!node || !scroller) return;
+
+      const scrollerTop = scroller.getBoundingClientRect().top;
+      const nodeTop = node.getBoundingClientRect().top;
+      scroller.scrollTo({
+        top: scroller.scrollTop + nodeTop - scrollerTop - 2,
+        behavior: "auto",
+      });
+    };
+    const frame = requestAnimationFrame(positionRequestedSection);
+    const layoutTimer = window.setTimeout(positionRequestedSection, 160);
+    const settleTimer = window.setTimeout(() => {
+      positionRequestedSection();
+      restoringRouteRef.current = false;
+    }, 420);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.clearTimeout(layoutTimer);
+      window.clearTimeout(settleTimer);
+    };
+  }, [framework.id, routeRestoreKey]);
 
   useEffect(() => {
     const media = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -101,6 +125,7 @@ function FrameworkReadingSurface({
     const updateActiveSection = () => {
       cancelAnimationFrame(frame);
       setHeaderElevated(scroller.scrollTop > 12);
+      if (restoringRouteRef.current) return;
 
       frame = requestAnimationFrame(() => {
         const rootTop = scroller.getBoundingClientRect().top;
@@ -777,6 +802,7 @@ interface FrameworksSceneProps {
   returnFrameworkId?: MobileFrameworkId | null;
   onReturnFrameworkComplete?: () => void;
   onBack: () => void;
+  routeRestoreKey?: number;
 }
 
 export default function FrameworksScene({
@@ -794,6 +820,7 @@ export default function FrameworksScene({
   returnFrameworkId = null,
   onReturnFrameworkComplete,
   onBack,
+  routeRestoreKey = 0,
 }: FrameworksSceneProps) {
   const framework = mobileFrameworkFor(activeFrameworkId);
   const {
@@ -835,6 +862,7 @@ export default function FrameworksScene({
         setActiveSectionId={setActiveSectionId}
         onCanvas={onCanvas}
         onBack={onBack}
+        routeRestoreKey={routeRestoreKey}
       />
     );
   }

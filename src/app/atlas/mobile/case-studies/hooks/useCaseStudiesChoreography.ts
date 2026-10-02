@@ -47,7 +47,9 @@ type LandingState = "atlas-landing" | "system-awakened" | "system-overview";
 interface UseCaseStudiesChoreographyArgs {
   state: LandingState;
   returnProjectId: CaseStudyProjectId | null;
+  initialSelectionId?: CaseStudiesFocusId;
   onSelectCaseStudies: () => void;
+  onOverviewSelection?: (id: CaseStudiesFocusId) => void;
   onSelectProject?: (projectId: CaseStudyProjectId) => void;
   onReturnProjectComplete?: () => void;
   onBack: () => void;
@@ -56,15 +58,17 @@ interface UseCaseStudiesChoreographyArgs {
 export default function useCaseStudiesChoreography({
   state,
   returnProjectId,
+  initialSelectionId = "case-studies",
   onSelectCaseStudies,
+  onOverviewSelection,
   onSelectProject,
   onReturnProjectComplete,
   onBack,
 }: UseCaseStudiesChoreographyArgs) {
   const [selectedCaseStudyId, setSelectedCaseStudyId] =
-    useState<CaseStudiesFocusId>(returnProjectId ?? "case-studies");
+    useState<CaseStudiesFocusId>(returnProjectId ?? initialSelectionId);
   const [drawerItemId, setDrawerItemId] =
-    useState<CaseStudiesFocusId>(returnProjectId ?? "case-studies");
+    useState<CaseStudiesFocusId>(returnProjectId ?? initialSelectionId);
   const [drawerPhase, setDrawerPhase] =
     useState<CaseStudiesDrawerPhase>("open");
   const [entryPhase, setEntryPhase] =
@@ -327,6 +331,7 @@ export default function useCaseStudiesChoreography({
 
     setSelectionPulseId(prefersReducedMotion ? null : id);
     setSelectedCaseStudyId(id);
+    onOverviewSelection?.(id);
 
     if (prefersReducedMotion) {
       setDrawerPhase("closing");

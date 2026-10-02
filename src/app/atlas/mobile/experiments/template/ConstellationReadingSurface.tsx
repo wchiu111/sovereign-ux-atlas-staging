@@ -11,20 +11,52 @@ import ConstellationSectionRail from "./ConstellationSectionRail";
 import ConstellationEvidenceStrip from "./ConstellationEvidenceStrip";
 import ConstellationEvidenceViewer from "./ConstellationEvidenceViewer";
 import type {
+  ConstellationEvidence,
   ConstellationItem,
   ConstellationSection,
 } from "./constellationTypes";
+
+function evidenceTriggerId(
+  itemId: string,
+  sectionId: string,
+  evidenceId: string,
+) {
+  return `evidence-${itemId}-${sectionId}-${evidenceId}`.replace(
+    /[^a-zA-Z0-9-_]/g,
+    "-",
+  );
+}
 
 export default function ConstellationReadingSurface<TId extends string>({
   item,
   domainColor,
   insightLabel = "EXPERIMENT INSIGHT",
+  initialSectionId,
+  initialEvidenceId,
+  routeRestoreKey = 0,
+  onActiveSectionChange,
+  onEvidenceOpen,
+  onEvidenceChange,
+  onEvidenceClose,
   onBack,
   renderSectionExtras,
 }: {
   item: ConstellationItem<TId>;
   domainColor: string;
   insightLabel?: string;
+  initialSectionId?: string | null;
+  initialEvidenceId?: string | null;
+  routeRestoreKey?: number;
+  onActiveSectionChange?: (sectionId: string) => void;
+  onEvidenceOpen?: (
+    sectionId: string,
+    evidence: ConstellationEvidence,
+  ) => void;
+  onEvidenceChange?: (
+    sectionId: string,
+    evidence: ConstellationEvidence,
+  ) => void;
+  onEvidenceClose?: (sectionId: string) => void;
   onBack: () => void;
   renderSectionExtras?: (
     section: ConstellationSection,
@@ -34,8 +66,29 @@ export default function ConstellationReadingSurface<TId extends string>({
   const scrollRef = useRef<HTMLDivElement>(null);
   const chromeRef = useRef<HTMLDivElement>(null);
   const sectionRefs = useRef(new Map<string, HTMLElement>());
+  const resolvedInitialSection =
+    sections.find((section) => section.id === initialSectionId) ?? sections[0];
+  const resolvedInitialEvidenceIndex = initialEvidenceId
+    ? (resolvedInitialSection?.evidence ?? []).findIndex(
+        (evidence) => evidence.id === initialEvidenceId,
+      )
+    : -1;
+  const resolvedInitialEvidence =
+    resolvedInitialSection && resolvedInitialEvidenceIndex >= 0
+      ? {
+          section: resolvedInitialSection,
+          index: resolvedInitialEvidenceIndex,
+          triggerId: evidenceTriggerId(
+            item.id,
+            resolvedInitialSection.id,
+            initialEvidenceId!,
+          ),
+        }
+      : null;
 
-  const [activeId, setActiveId] = useState(sections[0]?.id ?? "");
+  const [activeId, setActiveId] = useState(
+    resolvedInitialSection?.id ?? "",
+  );
   const [headerElevated, setHeaderElevated] = useState(false);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   const [chromeHeight, setChromeHeight] = useState(114);
@@ -44,8 +97,9 @@ export default function ConstellationReadingSurface<TId extends string>({
     section: ConstellationSection;
     index: number;
     triggerId: string;
-  } | null>(null);
+  } | null>(resolvedInitialEvidence);
   const exitTimerRef = useRef<number | null>(null);
+  const restoringRouteRef = useRef(true);
 
   const sectionIds = useMemo(
     () => sections.map((section) => section.id),
@@ -53,10 +107,39 @@ export default function ConstellationReadingSurface<TId extends string>({
   );
 
   useEffect(() => {
-    setActiveId(sections[0]?.id ?? "");
-    setActiveEvidence(null);
-    scrollRef.current?.scrollTo({ top: 0, behavior: "auto" });
-  }, [item.id, sections]);
+    restoringRouteRef.current = true;
+    setActiveId(resolvedInitialSection?.id ?? "");
+    setActiveEvidence(resolvedInitialEvidence);
+
+    const positionRequestedSection = () => {
+      if (!resolvedInitialSection) return;
+      const node = sectionRefs.current.get(resolvedInitialSection.id);
+      const scroller = scrollRef.current;
+      if (!node || !scroller) return;
+
+      const scrollerTop = scroller.getBoundingClientRect().top;
+      const nodeTop = node.getBoundingClientRect().top;
+      scroller.scrollTo({
+        top: scroller.scrollTop + nodeTop - scrollerTop - 2,
+        behavior: "auto",
+      });
+    };
+    const frame = requestAnimationFrame(positionRequestedSection);
+    const layoutTimer = window.setTimeout(positionRequestedSection, 160);
+    const settleTimer = window.setTimeout(() => {
+      positionRequestedSection();
+      restoringRouteRef.current = false;
+    }, 420);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.clearTimeout(layoutTimer);
+      window.clearTimeout(settleTimer);
+    };
+  }, [item.id, routeRestoreKey]);
+
+  useEffect(() => {
+    onActiveSectionChange?.(activeId);
+  }, [activeId, onActiveSectionChange]);
 
   useEffect(() => {
     const media = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -96,6 +179,7 @@ export default function ConstellationReadingSurface<TId extends string>({
     const updateActiveSection = () => {
       cancelAnimationFrame(frame);
       setHeaderElevated(scroller.scrollTop > 12);
+      if (restoringRouteRef.current) return;
 
       frame = requestAnimationFrame(() => {
         const rootTop = scroller.getBoundingClientRect().top;
@@ -179,8 +263,10 @@ export default function ConstellationReadingSurface<TId extends string>({
   });
 
   const closeEvidence = () => {
+    const sectionId = activeEvidence?.section.id;
     const triggerId = activeEvidence?.triggerId;
     setActiveEvidence(null);
+    if (sectionId) onEvidenceClose?.(sectionId);
 
     if (triggerId) {
       requestAnimationFrame(() => {
@@ -384,11 +470,13 @@ export default function ConstellationReadingSurface<TId extends string>({
                 itemId={item.id}
                 sectionId={section.id}
                 onInspect={(index, triggerId) => {
+                  const evidence = section.evidence?.[index];
                   setActiveEvidence({
                     section,
                     index,
                     triggerId,
                   });
+                  if (evidence) onEvidenceOpen?.(section.id, evidence);
                 }}
               />
             )}
@@ -455,6 +543,7 @@ export default function ConstellationReadingSurface<TId extends string>({
             sectionLabel={activeEvidence.section.label}
             domainColor={domainColor}
             onIndexChange={(index) => {
+              const evidence = activeEvidence.section.evidence?.[index];
               setActiveEvidence((current) =>
                 current
                   ? {
@@ -463,6 +552,9 @@ export default function ConstellationReadingSurface<TId extends string>({
                     }
                   : current,
               );
+              if (evidence) {
+                onEvidenceChange?.(activeEvidence.section.id, evidence);
+              }
             }}
             onClose={closeEvidence}
           />

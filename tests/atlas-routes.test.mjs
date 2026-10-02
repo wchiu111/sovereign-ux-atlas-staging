@@ -13,6 +13,63 @@ try {
 
   const parse = (pathname, hash = "") => routes.parseAtlasRoute({ pathname, hash });
 
+  await test("builds and restores the Observatory root", () => {
+    assert.equal(routes.observatoryRootPath(), "/observatory");
+    const route = parse("/observatory");
+    assert.equal(route.canonicalPath, "/observatory");
+    assert.deepEqual(route.observatory, {
+      slug: null,
+      desktopPanelId: null,
+    });
+  });
+
+  await test("restores every canonical Observatory panel", () => {
+    const panels = [
+      ["about", "about"],
+      ["journey", "timeline"],
+      ["philosophy", "philosophy"],
+      ["contact", "contact"],
+    ];
+
+    panels.forEach(([slug, desktopPanelId]) => {
+      const route = parse(`/observatory/${slug}`);
+      assert.equal(route.canonicalPath, `/observatory/${slug}`);
+      assert.deepEqual(route.observatory, { slug, desktopPanelId });
+    });
+  });
+
+  await test("rejects invalid Observatory paths", () => {
+    assert.equal(parse("/observatory/timeline"), null);
+    assert.equal(parse("/observatory/not-a-panel"), null);
+    assert.equal(parse("/observatory/about/extra"), null);
+  });
+
+  await test("maps public journey routes to Desktop timeline state", () => {
+    assert.equal(
+      routes.desktopObservatoryPanelForSlug("journey"),
+      "timeline",
+    );
+    assert.equal(
+      routes.observatorySlugForDesktopPanel("timeline"),
+      "journey",
+    );
+    assert.equal(routes.desktopObservatoryPanelForSlug("timeline"), null);
+  });
+
+  await test("builds canonical Observatory panel paths", () => {
+    assert.equal(routes.observatoryPanelPath("about"), "/observatory/about");
+    assert.equal(
+      routes.observatoryPanelPath("journey"),
+      "/observatory/journey",
+    );
+    assert.equal(
+      routes.observatoryPanelPathForDesktopPanel("timeline"),
+      "/observatory/journey",
+    );
+    assert.equal(routes.observatoryPanelPath("timeline"), null);
+    assert.equal(routes.observatoryPanelPath("unknown"), null);
+  });
+
   await test("builds canonical Experiment paths", () => {
     assert.equal(routes.atlasSystemPath("experiments"), "/experiments");
     assert.equal(
@@ -53,6 +110,49 @@ try {
       route.canonicalPath,
       "/frameworks/authority-gradient/system-purpose",
     );
+  });
+
+  await test("canonicalizes shared Presence Navigation evidence to Arrival", () => {
+    const evidenceIds = [
+      "attention-architecture-demo",
+      "attention-architecture-map",
+    ];
+
+    evidenceIds.forEach((evidenceId) => {
+      const expected =
+        `/frameworks/presence-navigation/arrival/evidence/${evidenceId}`;
+      assert.equal(
+        routes.atlasEntryEvidencePath(
+          "presence-navigation",
+          "attention",
+          evidenceId,
+        ),
+        expected,
+      );
+
+      const route = parse(
+        `/frameworks/presence-navigation/exploration/evidence/${evidenceId}`,
+      );
+      assert.equal(route.canonicalPath, expected);
+      assert.equal(route.sectionId, "arrival");
+      assert.equal(route.evidenceId, evidenceId);
+    });
+  });
+
+  await test("keeps existing Case Study routes unchanged", () => {
+    assert.equal(routes.atlasSystemPath("case-studies"), "/case-studies");
+    assert.equal(
+      routes.caseStudyBasePath("globality"),
+      "/case-studies/globality",
+    );
+    assert.equal(
+      routes.caseStudySectionPath("globality", "context"),
+      "/case-studies/globality/context",
+    );
+
+    const legacy = parse("/case-study/globality/context");
+    assert.equal(legacy.canonicalPath, "/case-studies/globality/context");
+    assert.equal(legacy.sectionId, "context");
   });
 
   await test("restores the Experiments system and overview", () => {

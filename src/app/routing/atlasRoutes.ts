@@ -5,6 +5,27 @@ import { initialAtlasState, type AtlasState } from "../state/atlasState";
 export const CASE_STUDIES_PATH = "/case-studies";
 export const EXPERIMENTS_PATH = "/experiments";
 export const FRAMEWORKS_PATH = "/frameworks";
+export const OBSERVATORY_PATH = "/observatory";
+export const ATLAS_PATH_CHANGE_EVENT = "atlas:pathchange";
+
+export type ObservatoryRouteSlug =
+  | "about"
+  | "journey"
+  | "philosophy"
+  | "contact";
+
+export type DesktopObservatoryPanelId =
+  | "about"
+  | "timeline"
+  | "philosophy"
+  | "contact";
+
+const OBSERVATORY_ROUTE_TO_DESKTOP_PANEL = {
+  about: "about",
+  journey: "timeline",
+  philosophy: "philosophy",
+  contact: "contact",
+} as const satisfies Record<ObservatoryRouteSlug, DesktopObservatoryPanelId>;
 
 interface RoutableAtlasCategory {
   category: AtlasCategory;
@@ -37,8 +58,13 @@ const ROUTABLE_CATEGORIES: RoutableAtlasCategory[] = [
 export interface AtlasRoute {
   atlasState: AtlasState;
   canonicalPath: string;
+  entryRouteId?: string;
   sectionId?: string;
   evidenceId?: string;
+  observatory?: {
+    slug: ObservatoryRouteSlug | null;
+    desktopPanelId: DesktopObservatoryPanelId | null;
+  };
 }
 
 function navigationState(overrides: Partial<AtlasState>): AtlasState {
@@ -83,6 +109,40 @@ export function atlasSystemPath(systemId: string): string | null {
     ?.systemPath ?? null;
 }
 
+export function observatoryRootPath(): string {
+  return OBSERVATORY_PATH;
+}
+
+export function desktopObservatoryPanelForSlug(
+  slug: string,
+): DesktopObservatoryPanelId | null {
+  return OBSERVATORY_ROUTE_TO_DESKTOP_PANEL[
+    slug as ObservatoryRouteSlug
+  ] ?? null;
+}
+
+export function observatorySlugForDesktopPanel(
+  panelId: string,
+): ObservatoryRouteSlug | null {
+  const match = Object.entries(OBSERVATORY_ROUTE_TO_DESKTOP_PANEL).find(
+    ([, desktopPanelId]) => desktopPanelId === panelId,
+  );
+  return (match?.[0] as ObservatoryRouteSlug | undefined) ?? null;
+}
+
+export function observatoryPanelPath(slug: string): string | null {
+  return desktopObservatoryPanelForSlug(slug)
+    ? `${OBSERVATORY_PATH}/${slug}`
+    : null;
+}
+
+export function observatoryPanelPathForDesktopPanel(
+  panelId: string,
+): string | null {
+  const slug = observatorySlugForDesktopPanel(panelId);
+  return slug ? observatoryPanelPath(slug) : null;
+}
+
 export function atlasEntryBasePath(entryId: string): string | null {
   const entry = getAtlasEntry(entryId);
   if (!entry) return null;
@@ -94,8 +154,13 @@ export function atlasEntrySectionPath(
   entryId: string,
   sectionId: string,
 ): string | null {
+  const entry = getAtlasEntry(entryId);
+  const section = entry?.sections?.find(
+    (candidate) => candidate.id === sectionId,
+  );
+  if (!entry || !section) return null;
   const basePath = atlasEntryBasePath(entryId);
-  return basePath ? `${basePath}/${encodeURIComponent(sectionId)}` : null;
+  return basePath ? `${basePath}/${encodeURIComponent(section.id)}` : null;
 }
 
 export function atlasEntryEvidencePath(
@@ -103,7 +168,24 @@ export function atlasEntryEvidencePath(
   sectionId: string,
   evidenceId: string,
 ): string | null {
-  const sectionPath = atlasEntrySectionPath(entryId, sectionId);
+  const entry = getAtlasEntry(entryId);
+  const requestedSection = entry?.sections?.find(
+    (section) => section.id === sectionId,
+  );
+  const evidenceExistsInRequestedSection = requestedSection?.evidence?.some(
+    (evidence) => evidence.id === evidenceId,
+  );
+  if (!entry || !requestedSection || !evidenceExistsInRequestedSection) {
+    return null;
+  }
+
+  // Shared evidence receives one stable URL: its first authored section.
+  const canonicalSection = entry.sections?.find((section) =>
+    section.evidence?.some((evidence) => evidence.id === evidenceId),
+  );
+  const sectionPath = canonicalSection
+    ? atlasEntrySectionPath(entry.id, canonicalSection.id)
+    : null;
   return sectionPath
     ? `${sectionPath}/evidence/${encodeURIComponent(evidenceId)}`
     : null;
@@ -161,6 +243,32 @@ export function parseAtlasRoute(
     return { atlasState: navigationState({ level: 0 }), canonicalPath: "/" };
   }
 
+  if (pathname === OBSERVATORY_PATH) {
+    return {
+      atlasState: navigationState({ level: 0 }),
+      canonicalPath: OBSERVATORY_PATH,
+      observatory: { slug: null, desktopPanelId: null },
+    };
+  }
+
+  if (pathname.startsWith(`${OBSERVATORY_PATH}/`)) {
+    const routeSegments = pathname
+      .slice(OBSERVATORY_PATH.length + 1)
+      .split("/")
+      .map(safeDecode);
+    if (routeSegments.length !== 1) return null;
+
+    const slug = routeSegments[0] as ObservatoryRouteSlug;
+    const desktopPanelId = desktopObservatoryPanelForSlug(slug);
+    if (!desktopPanelId) return null;
+
+    return {
+      atlasState: navigationState({ level: 0 }),
+      canonicalPath: observatoryPanelPath(slug)!,
+      observatory: { slug, desktopPanelId },
+    };
+  }
+
   const systemRoute = ROUTABLE_CATEGORIES.find(
     (config) => pathname === config.systemPath,
   );
@@ -199,23 +307,37 @@ export function parseAtlasRoute(
         drawerOpen: true,
       }),
       canonicalPath: canonicalBase,
+      entryRouteId: publicSlug(entry),
     };
   }
 
-  const sectionIndex = entry.sections?.findIndex(
+  const requestedSectionIndex = entry.sections?.findIndex(
     (section) => section.id === segments[0],
   ) ?? -1;
-  if (sectionIndex < 0) return null;
-  const section = entry.sections![sectionIndex];
+  if (requestedSectionIndex < 0) return null;
+  const requestedSection = entry.sections![requestedSectionIndex];
+  const hasPathEvidence =
+    segments.length === 3 && segments[1] === "evidence" && Boolean(segments[2]);
+  if (segments.length !== 1 && !hasPathEvidence) return null;
   const pathEvidenceId =
-    segments[1] === "evidence" && segments[2] ? segments[2] : undefined;
+    hasPathEvidence ? segments[2] : undefined;
   const hashEvidenceId = location.hash ? safeDecode(location.hash.slice(1)) : undefined;
   const candidateEvidenceId = pathEvidenceId ?? hashEvidenceId;
-  const evidenceId = section.evidence?.some(
+  const evidenceId = requestedSection.evidence?.some(
     (evidence) => evidence.id === candidateEvidenceId,
   )
     ? candidateEvidenceId
     : undefined;
+  if (candidateEvidenceId && !evidenceId) return null;
+  const canonicalEvidenceSection = evidenceId
+    ? entry.sections?.find((section) =>
+        section.evidence?.some((evidence) => evidence.id === evidenceId),
+      )
+    : undefined;
+  const section = canonicalEvidenceSection ?? requestedSection;
+  const sectionIndex = entry.sections!.findIndex(
+    (candidate) => candidate.id === section.id,
+  );
 
   return {
     atlasState: navigationState({
@@ -227,6 +349,7 @@ export function parseAtlasRoute(
     canonicalPath: evidenceId
       ? atlasEntryEvidencePath(entry.id, section.id, evidenceId)!
       : atlasEntrySectionPath(entry.id, section.id)!,
+    entryRouteId: publicSlug(entry),
     sectionId: section.id,
     evidenceId,
   };
@@ -240,9 +363,11 @@ export function currentBrowserPath(): string {
 export function pushAtlasPath(path: string): void {
   if (typeof window === "undefined" || currentBrowserPath() === path) return;
   window.history.pushState({}, "", path);
+  window.dispatchEvent(new Event(ATLAS_PATH_CHANGE_EVENT));
 }
 
 export function replaceAtlasPath(path: string): void {
   if (typeof window === "undefined" || currentBrowserPath() === path) return;
   window.history.replaceState({}, "", path);
+  window.dispatchEvent(new Event(ATLAS_PATH_CHANGE_EVENT));
 }
