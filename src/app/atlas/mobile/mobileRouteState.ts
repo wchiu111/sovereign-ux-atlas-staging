@@ -8,6 +8,11 @@ import {
 } from "../../routing/atlasRoutes";
 import { mobileCaseStudyDocumentFor } from "./reading/caseStudyReadingRegistry";
 import type { MobileCaseStudyProjectId } from "./reading/mobileReadingTypes";
+import {
+  MOBILE_FRAMEWORKS,
+  mobileFrameworkFor,
+} from "./frameworks/frameworkRegistry";
+import type { MobileFrameworkId } from "./frameworks/mobileFrameworkTypes";
 
 export type MobileAtlasOverviewDestination =
   | { kind: "atlas" }
@@ -33,12 +38,27 @@ export interface MobileCaseStudyReaderDestination {
   canonicalPath: string;
 }
 
+export interface MobileFrameworkReaderDestination {
+  kind: "framework-reader";
+  frameworkId: MobileFrameworkId;
+  sectionId: string;
+  evidenceId?: string;
+  canonicalPath: string;
+}
+
 export type MobileAtlasRouteDestination =
   | MobileAtlasOverviewDestination
   | MobileCaseStudyReaderDestination
+  | MobileFrameworkReaderDestination
   | MobileAtlasDeferredDestination;
 
-export type MobileCaseStudyHistoryIntent = "push" | "replace";
+export type MobileReaderHistoryIntent = "push" | "replace";
+
+function historyIntentForReaderEvent(
+  event: "reader-entry" | "section-change" | "evidence-open",
+): MobileReaderHistoryIntent {
+  return event === "section-change" ? "replace" : "push";
+}
 
 const MOBILE_CASE_STUDY_IDS = [
   "agentic-insurance",
@@ -51,6 +71,10 @@ function isMobileCaseStudyProjectId(
   value: string,
 ): value is MobileCaseStudyProjectId {
   return MOBILE_CASE_STUDY_IDS.some((projectId) => projectId === value);
+}
+
+function isMobileFrameworkId(value: string): value is MobileFrameworkId {
+  return MOBILE_FRAMEWORKS.some((framework) => framework.id === value);
 }
 
 const MOBILE_SYSTEM_IDS = [
@@ -83,6 +107,19 @@ export function mobileDestinationFromAtlasRoute(
       return {
         kind: "case-study-reader",
         projectId: publicEntryId,
+        sectionId: route.sectionId,
+        evidenceId: route.evidenceId,
+        canonicalPath: route.canonicalPath,
+      };
+    }
+
+    if (
+      activeSystemId === "frameworks" &&
+      isMobileFrameworkId(publicEntryId)
+    ) {
+      return {
+        kind: "framework-reader",
+        frameworkId: publicEntryId,
         sectionId: route.sectionId,
         evidenceId: route.evidenceId,
         canonicalPath: route.canonicalPath,
@@ -140,8 +177,52 @@ export function mobileCaseStudyEvidencePath(
 
 export function mobileCaseStudyHistoryIntent(
   event: "reader-entry" | "section-change" | "evidence-open",
-): MobileCaseStudyHistoryIntent {
-  return event === "section-change" ? "replace" : "push";
+): MobileReaderHistoryIntent {
+  return historyIntentForReaderEvent(event);
+}
+
+export function mobileFrameworkReaderEntryPath(
+  frameworkId: MobileFrameworkId,
+): string | null {
+  const firstSection = mobileFrameworkFor(frameworkId).sections[0];
+  return firstSection
+    ? mobileFrameworkSectionPath(frameworkId, firstSection.id)
+    : null;
+}
+
+export function mobileFrameworkSectionPath(
+  frameworkId: MobileFrameworkId,
+  sectionId: string,
+): string | null {
+  const framework = mobileFrameworkFor(frameworkId);
+  if (!framework.sections.some((section) => section.id === sectionId)) {
+    return null;
+  }
+  return atlasEntrySectionPath(frameworkId, sectionId);
+}
+
+export function mobileFrameworkEvidencePath(
+  frameworkId: MobileFrameworkId,
+  sectionId: string,
+  evidenceId: string,
+): string | null {
+  const framework = mobileFrameworkFor(frameworkId);
+  const sectionExists = framework.sections.some(
+    (section) => section.id === sectionId,
+  );
+  const evidence = framework.evidence.find(
+    (item) =>
+      item.id === evidenceId &&
+      (item.sectionId === sectionId || item.sectionId === "*"),
+  );
+  if (!sectionExists || !evidence) return null;
+  return atlasEntryEvidencePath(frameworkId, sectionId, evidenceId);
+}
+
+export function mobileFrameworkHistoryIntent(
+  event: "reader-entry" | "section-change" | "evidence-open",
+): MobileReaderHistoryIntent {
+  return historyIntentForReaderEvent(event);
 }
 
 export function mobileDestinationFromPath(

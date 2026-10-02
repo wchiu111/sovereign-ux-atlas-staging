@@ -51,10 +51,14 @@ import {
   mobileCaseStudyEvidencePath,
   mobileCaseStudyReaderEntryPath,
   mobileCaseStudySectionPath,
+  mobileFrameworkEvidencePath,
+  mobileFrameworkReaderEntryPath,
+  mobileFrameworkSectionPath,
   mobileOverviewDestinationPath,
   type MobileAtlasOverviewDestination,
   type MobileAtlasRouteDestination,
   type MobileCaseStudyReaderDestination,
+  type MobileFrameworkReaderDestination,
 } from "./mobileRouteState";
 import {
   pushAtlasPath,
@@ -167,11 +171,16 @@ export default function MobileAtlas() {
   const initialRouteDestination = initialRouteDestinationRef.current;
   const initialOverviewDestination =
     initialRouteDestination?.kind === "deeper" ||
-    initialRouteDestination?.kind === "case-study-reader"
+    initialRouteDestination?.kind === "case-study-reader" ||
+    initialRouteDestination?.kind === "framework-reader"
       ? null
       : initialRouteDestination;
   const initialCaseStudyReaderDestination =
     initialRouteDestination?.kind === "case-study-reader"
+      ? initialRouteDestination
+      : null;
+  const initialFrameworkReaderDestination =
+    initialRouteDestination?.kind === "framework-reader"
       ? initialRouteDestination
       : null;
 
@@ -186,6 +195,11 @@ export default function MobileAtlas() {
       return "experiments-focus";
     }
     if (initialCaseStudyReaderDestination) return "project-reading";
+    if (initialFrameworkReaderDestination) {
+      return initialFrameworkReaderDestination.evidenceId
+        ? "framework-evidence"
+        : "framework-reading";
+    }
     return "atlas-landing";
   });
   const historyRestorationRef = useRef(false);
@@ -193,6 +207,7 @@ export default function MobileAtlas() {
   const [frameworksRestoreKey, setFrameworksRestoreKey] = useState(0);
   const [experimentsRestoreKey, setExperimentsRestoreKey] = useState(0);
   const [caseStudyReaderRestoreKey, setCaseStudyReaderRestoreKey] = useState(0);
+  const [frameworkReaderRestoreKey, setFrameworkReaderRestoreKey] = useState(0);
 
   const initialCaseStudySelectionId =
     initialOverviewDestination?.kind === "case-studies"
@@ -203,10 +218,11 @@ export default function MobileAtlas() {
 
   const [activeFrameworkId, setActiveFrameworkId] =
     useState<MobileFrameworkId>(() =>
-      initialOverviewDestination?.kind === "frameworks" &&
+      initialFrameworkReaderDestination?.frameworkId ??
+      (initialOverviewDestination?.kind === "frameworks" &&
       initialOverviewDestination.id !== "frameworks"
         ? initialOverviewDestination.id as MobileFrameworkId
-        : DEFAULT_MOBILE_FRAMEWORK_ID,
+        : DEFAULT_MOBILE_FRAMEWORK_ID),
     );
   const [frameworkOverviewSelectionId, setFrameworkOverviewSelectionId] =
     useState<FrameworkOverviewId>(() =>
@@ -215,15 +231,21 @@ export default function MobileAtlas() {
         : "frameworks",
     );
   const [activeFrameworkSectionId, setActiveFrameworkSectionId] =
-    useState<string>("governance");
+    useState<string>(
+      initialFrameworkReaderDestination?.sectionId ?? "governance",
+    );
   const [activeFrameworkEvidenceId, setActiveFrameworkEvidenceId] =
-    useState<string | null>(null);
+    useState<string | null>(
+      initialFrameworkReaderDestination?.evidenceId ?? null,
+    );
   const [returnFrameworkId, setReturnFrameworkId] =
     useState<MobileFrameworkId | null>(null);
   const [returningFrameworksToAtlas, setReturningFrameworksToAtlas] =
     useState(false);
   const pendingFrameworkSearchIdRef =
     useRef<FrameworkOverviewId | null>(null);
+  const frameworkReaderPushedRef = useRef(false);
+  const frameworkEvidencePushedRef = useRef(false);
 
   const [activeCaseStudyProjectId, setActiveCaseStudyProjectId] =
     useState<MobileCaseStudyProjectId | null>(
@@ -519,7 +541,8 @@ export default function MobileAtlas() {
     (
       destination:
         | MobileAtlasOverviewDestination
-        | MobileCaseStudyReaderDestination,
+        | MobileCaseStudyReaderDestination
+        | MobileFrameworkReaderDestination,
     ) => {
       historyRestorationRef.current = true;
       setObservatoryPhase("closed");
@@ -533,6 +556,8 @@ export default function MobileAtlas() {
         setStateRaw("atlas-landing");
         caseStudyReaderPushedRef.current = false;
         caseStudyEvidencePushedRef.current = false;
+        frameworkReaderPushedRef.current = false;
+        frameworkEvidencePushedRef.current = false;
       } else if (destination.kind === "case-studies") {
         setCaseStudyRestoredSelectionId(destination.id);
         setActiveCaseStudyProjectId(null);
@@ -566,6 +591,25 @@ export default function MobileAtlas() {
         }
         setStateRaw("frameworks-focus");
         setFrameworksRestoreKey((key) => key + 1);
+        frameworkReaderPushedRef.current = false;
+        frameworkEvidencePushedRef.current = false;
+      } else if (destination.kind === "framework-reader") {
+        setActiveFrameworkId(destination.frameworkId);
+        setFrameworkOverviewSelectionId(destination.frameworkId);
+        setActiveFrameworkSectionId(destination.sectionId);
+        setActiveFrameworkEvidenceId(destination.evidenceId ?? null);
+        setReturnFrameworkId(null);
+        setReturningFrameworksToAtlas(false);
+        setStateRaw(
+          destination.evidenceId
+            ? "framework-evidence"
+            : "framework-reading",
+        );
+        setFrameworkReaderRestoreKey((key) => key + 1);
+        frameworkReaderPushedRef.current = true;
+        frameworkEvidencePushedRef.current = Boolean(
+          destination.evidenceId,
+        );
       } else {
         const selectionId = destination.id;
         setReturnExperimentId(null);
@@ -613,6 +657,20 @@ export default function MobileAtlas() {
   const isFrameworkEvidence = state === "framework-evidence";
   const isExperimentsOverview = state === "experiments-focus";
   const isExperimentReading = state === "experiment-reading";
+
+  useEffect(() => {
+    if (state !== "framework-reading" || activeFrameworkEvidenceId) return;
+    const path = mobileFrameworkSectionPath(
+      activeFrameworkId,
+      activeFrameworkSectionId,
+    );
+    if (path) replaceAtlasPath(path);
+  }, [
+    activeFrameworkEvidenceId,
+    activeFrameworkId,
+    activeFrameworkSectionId,
+    state,
+  ]);
 
   const experimentsAtlasTransitionActive =
     experimentEntryInProgress || returningExperimentsToAtlas;
@@ -1094,10 +1152,20 @@ export default function MobileAtlas() {
                   });
                 }}
                 onExplore={() => {
+                  const framework = mobileFrameworkFor(activeFrameworkId);
+                  const firstSectionId = framework.sections[0]?.id ?? "";
                   setReturnFrameworkId(null);
                   setFrameworkOverviewSelectionId(
                     activeFrameworkId,
                   );
+                  setActiveFrameworkSectionId(firstSectionId);
+                  setActiveFrameworkEvidenceId(null);
+                  frameworkReaderPushedRef.current = true;
+                  frameworkEvidencePushedRef.current = false;
+                  const readerPath = mobileFrameworkReaderEntryPath(
+                    activeFrameworkId,
+                  );
+                  if (readerPath) pushAtlasPath(readerPath);
                   setState("framework-reading");
                 }}
                 onCanvas={(evidenceId) => {
@@ -1379,17 +1447,38 @@ export default function MobileAtlas() {
                     setState("framework-reading")
                   }
                   onCanvas={(evidenceId) => {
+                    const path = mobileFrameworkEvidencePath(
+                      activeFrameworkId,
+                      activeFrameworkSectionId,
+                      evidenceId,
+                    );
                     setActiveFrameworkEvidenceId(evidenceId);
+                    frameworkEvidencePushedRef.current = true;
+                    if (path) pushAtlasPath(path);
                     setState("framework-evidence");
                   }}
                   activeEvidenceId={activeFrameworkEvidenceId}
                   onBack={() => {
+                    if (
+                      frameworkReaderPushedRef.current &&
+                      window.history.length > 1
+                    ) {
+                      frameworkReaderPushedRef.current = false;
+                      window.history.back();
+                      return;
+                    }
+                    const previewPath = mobileOverviewDestinationPath({
+                      kind: "frameworks",
+                      id: activeFrameworkId,
+                    });
+                    if (previewPath) replaceAtlasPath(previewPath);
                     setReturnFrameworkId(activeFrameworkId);
                     setFrameworkOverviewSelectionId(
                       activeFrameworkId,
                     );
                     setState("frameworks-focus");
                   }}
+                  routeRestoreKey={frameworkReaderRestoreKey}
                 />
 
                 {isFrameworkEvidence && (
@@ -1415,7 +1504,14 @@ export default function MobileAtlas() {
                       setState("framework-reading")
                     }
                     onCanvas={(evidenceId) => {
+                      const path = mobileFrameworkEvidencePath(
+                        activeFrameworkId,
+                        activeFrameworkSectionId,
+                        evidenceId,
+                      );
                       setActiveFrameworkEvidenceId(evidenceId);
+                      frameworkEvidencePushedRef.current = true;
+                      if (path) pushAtlasPath(path);
                       setState("framework-evidence");
                     }}
                     activeEvidenceId={
@@ -1423,6 +1519,19 @@ export default function MobileAtlas() {
                     }
                     onBack={() => {
                       setActiveFrameworkEvidenceId(null);
+                      if (
+                        frameworkEvidencePushedRef.current &&
+                        window.history.length > 1
+                      ) {
+                        frameworkEvidencePushedRef.current = false;
+                        window.history.back();
+                        return;
+                      }
+                      const path = mobileFrameworkSectionPath(
+                        activeFrameworkId,
+                        activeFrameworkSectionId,
+                      );
+                      if (path) replaceAtlasPath(path);
                       setState("framework-reading");
                     }}
                   />

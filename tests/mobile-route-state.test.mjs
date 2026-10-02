@@ -15,6 +15,9 @@ try {
   const registry = await server.ssrLoadModule(
     "/src/app/atlas/mobile/reading/caseStudyReadingRegistry.ts",
   );
+  const frameworkRegistry = await server.ssrLoadModule(
+    "/src/app/atlas/mobile/frameworks/frameworkRegistry.ts",
+  );
 
   await test("maps the Atlas landing route", () => {
     assert.deepEqual(routes.mobileDestinationFromPath("/"), {
@@ -196,22 +199,142 @@ try {
     );
   });
 
-  await test("preserves non-Case-Study deeper routes for later passes", () => {
-
+  await test("maps Framework sections into reader destinations", () => {
     assert.deepEqual(
       routes.mobileDestinationFromPath(
-        "/frameworks/presence-navigation/arrival/evidence/attention-architecture-map",
+        "/frameworks/authority-gradient/system-purpose",
       ),
       {
-        kind: "deeper",
-        systemId: "frameworks",
-        entryId: "presence-navigation",
-        sectionId: "arrival",
-        evidenceId: "attention-architecture-map",
+        kind: "framework-reader",
+        frameworkId: "authority-gradient",
+        sectionId: "system-purpose",
+        evidenceId: undefined,
         canonicalPath:
-          "/frameworks/presence-navigation/arrival/evidence/attention-architecture-map",
+          "/frameworks/authority-gradient/system-purpose",
       },
     );
+  });
+
+  await test("maps Framework evidence into reader destinations", () => {
+    const path =
+      "/frameworks/authority-gradient/system-purpose/evidence/recommendation-first";
+    assert.deepEqual(routes.mobileDestinationFromPath(path), {
+      kind: "framework-reader",
+      frameworkId: "authority-gradient",
+      sectionId: "system-purpose",
+      evidenceId: "recommendation-first",
+      canonicalPath: path,
+    });
+  });
+
+  await test("maps authored sections for all five Frameworks", () => {
+    frameworkRegistry.MOBILE_FRAMEWORKS.forEach((framework) => {
+      framework.sections.forEach((section) => {
+        const destination = routes.mobileDestinationFromPath(
+          `/frameworks/${framework.id}/${section.id}`,
+        );
+        assert.equal(destination.kind, "framework-reader");
+        assert.equal(destination.frameworkId, framework.id);
+        assert.equal(destination.sectionId, section.id);
+      });
+    });
+  });
+
+  await test("uses each Framework's authored first section", () => {
+    frameworkRegistry.MOBILE_FRAMEWORKS.forEach((framework) => {
+      assert.equal(
+        routes.mobileFrameworkReaderEntryPath(framework.id),
+        `/frameworks/${framework.id}/${framework.sections[0].id}`,
+      );
+    });
+  });
+
+  await test("builds validated Framework reader paths", () => {
+    assert.equal(
+      routes.mobileFrameworkSectionPath(
+        "authority-gradient",
+        "system-strategy",
+      ),
+      "/frameworks/authority-gradient/system-strategy",
+    );
+    assert.equal(
+      routes.mobileFrameworkEvidencePath(
+        "authority-gradient",
+        "system-purpose",
+        "recommendation-first",
+      ),
+      "/frameworks/authority-gradient/system-purpose/evidence/recommendation-first",
+    );
+    assert.equal(
+      routes.mobileFrameworkSectionPath(
+        "authority-gradient",
+        "not-a-section",
+      ),
+      null,
+    );
+    assert.equal(
+      routes.mobileFrameworkEvidencePath(
+        "authority-gradient",
+        "system-strategy",
+        "recommendation-first",
+      ),
+      null,
+    );
+  });
+
+  await test("classifies Framework history updates", () => {
+    assert.equal(routes.mobileFrameworkHistoryIntent("reader-entry"), "push");
+    assert.equal(
+      routes.mobileFrameworkHistoryIntent("section-change"),
+      "replace",
+    );
+    assert.equal(routes.mobileFrameworkHistoryIntent("evidence-open"), "push");
+  });
+
+  await test("canonicalizes shared Presence Navigation evidence to Arrival", () => {
+    for (const evidenceId of [
+      "attention-architecture-demo",
+      "attention-architecture-map",
+    ]) {
+      for (const sectionId of [
+        "arrival",
+        "orientation",
+        "attention",
+        "exploration",
+      ]) {
+        assert.equal(
+          routes.mobileFrameworkEvidencePath(
+            "presence-navigation",
+            sectionId,
+            evidenceId,
+          ),
+          `/frameworks/presence-navigation/arrival/evidence/${evidenceId}`,
+        );
+      }
+    }
+  });
+
+  await test("rejects invalid Framework section and evidence routes", () => {
+    assert.equal(
+      routes.mobileDestinationFromPath(
+        "/frameworks/authority-gradient/not-a-section",
+      ),
+      null,
+    );
+    assert.equal(
+      routes.mobileDestinationFromPath(
+        "/frameworks/authority-gradient/system-purpose/evidence/not-real",
+      ),
+      null,
+    );
+  });
+
+  await test("preserves Experiment deeper routes for the later pass", () => {
+    const destination = routes.mobileDestinationFromPath(
+      "/experiments/authority-drift/drift",
+    );
+    assert.equal(destination.kind, "deeper");
+    assert.equal(destination.systemId, "experiments");
   });
 
   await test("builds canonical paths for Mobile overview destinations", () => {
