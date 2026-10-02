@@ -18,6 +18,9 @@ try {
   const frameworkRegistry = await server.ssrLoadModule(
     "/src/app/atlas/mobile/frameworks/frameworkRegistry.ts",
   );
+  const experimentRegistry = await server.ssrLoadModule(
+    "/src/app/atlas/mobile/experiments/config/experimentsContent.ts",
+  );
 
   await test("maps the Atlas landing route", () => {
     assert.deepEqual(routes.mobileDestinationFromPath("/"), {
@@ -329,12 +332,130 @@ try {
     );
   });
 
-  await test("preserves Experiment deeper routes for the later pass", () => {
-    const destination = routes.mobileDestinationFromPath(
+  await test("maps Experiment sections into reader destinations", () => {
+    assert.deepEqual(
+      routes.mobileDestinationFromPath(
+        "/experiments/authority-drift/drift",
+      ),
+      {
+        kind: "experiment-reader",
+        experimentId: "authority-drift",
+        sectionId: "drift",
+        evidenceId: undefined,
+        canonicalPath: "/experiments/authority-drift/drift",
+      },
+    );
+  });
+
+  await test("maps Experiment evidence into reader destinations", () => {
+    const path =
+      "/experiments/authority-drift/evidence/evidence/authority-drift-baseline";
+    assert.deepEqual(routes.mobileDestinationFromPath(path), {
+      kind: "experiment-reader",
+      experimentId: "authority-drift",
+      sectionId: "evidence",
+      evidenceId: "authority-drift-baseline",
+      canonicalPath: path,
+    });
+  });
+
+  await test("maps authored sections for all five Experiments", () => {
+    experimentRegistry.MOBILE_EXPERIMENTS.forEach((experiment) => {
+      experiment.sections.forEach((section) => {
+        const destination = routes.mobileDestinationFromPath(
+          `/experiments/${experiment.id}/${section.id}`,
+        );
+        assert.equal(destination.kind, "experiment-reader");
+        assert.equal(destination.experimentId, experiment.id);
+        assert.equal(destination.sectionId, section.id);
+      });
+    });
+  });
+
+  await test("uses each Experiment's authored first section", () => {
+    experimentRegistry.MOBILE_EXPERIMENTS.forEach((experiment) => {
+      assert.equal(
+        routes.mobileExperimentReaderEntryPath(experiment.id),
+        `/experiments/${experiment.id}/${experiment.sections[0].id}`,
+      );
+    });
+  });
+
+  await test("builds validated Experiment reader paths", () => {
+    assert.equal(
+      routes.mobileExperimentSectionPath("authority-drift", "drift"),
       "/experiments/authority-drift/drift",
     );
-    assert.equal(destination.kind, "deeper");
-    assert.equal(destination.systemId, "experiments");
+    assert.equal(
+      routes.mobileExperimentEvidencePath(
+        "authority-drift",
+        "evidence",
+        "authority-drift-baseline",
+      ),
+      "/experiments/authority-drift/evidence/evidence/authority-drift-baseline",
+    );
+    assert.equal(
+      routes.mobileExperimentSectionPath(
+        "authority-drift",
+        "not-a-section",
+      ),
+      null,
+    );
+    assert.equal(
+      routes.mobileExperimentEvidencePath(
+        "authority-drift",
+        "drift",
+        "authority-drift-baseline",
+      ),
+      null,
+    );
+  });
+
+  await test("classifies Experiment history updates", () => {
+    assert.equal(routes.mobileExperimentHistoryIntent("reader-entry"), "push");
+    assert.equal(
+      routes.mobileExperimentHistoryIntent("section-change"),
+      "replace",
+    );
+    assert.equal(routes.mobileExperimentHistoryIntent("evidence-open"), "push");
+  });
+
+  await test("validates every authored Experiment evidence owner", () => {
+    experimentRegistry.MOBILE_EXPERIMENTS.forEach((experiment) => {
+      experiment.sections.forEach((section) => {
+        (section.evidence ?? []).forEach((evidence) => {
+          assert.equal(
+            routes.mobileExperimentEvidencePath(
+              experiment.id,
+              section.id,
+              evidence.id,
+            ),
+            `/experiments/${experiment.id}/${section.id}/evidence/${evidence.id}`,
+          );
+        });
+      });
+    });
+  });
+
+  await test("rejects Experiment evidence shortcuts and invalid combinations", () => {
+    assert.equal(
+      routes.mobileDestinationFromPath(
+        "/experiments/authority-drift/not-a-section",
+      ),
+      null,
+    );
+    assert.equal(
+      routes.mobileDestinationFromPath(
+        "/experiments/authority-drift/evidence/authority-drift-baseline",
+      ),
+      null,
+    );
+    assert.equal(
+      routes.mobileDestinationFromPath(
+        "/experiments/authority-drift/drift/evidence/authority-drift-baseline",
+      ),
+      null,
+    );
   });
 
   await test("builds canonical paths for Mobile overview destinations", () => {

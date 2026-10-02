@@ -13,6 +13,11 @@ import {
   mobileFrameworkFor,
 } from "./frameworks/frameworkRegistry";
 import type { MobileFrameworkId } from "./frameworks/mobileFrameworkTypes";
+import {
+  MOBILE_EXPERIMENTS,
+  mobileExperimentFor,
+} from "./experiments/config/experimentsContent";
+import type { MobileExperimentId } from "./experiments/experimentsTypes";
 
 export type MobileAtlasOverviewDestination =
   | { kind: "atlas" }
@@ -46,10 +51,19 @@ export interface MobileFrameworkReaderDestination {
   canonicalPath: string;
 }
 
+export interface MobileExperimentReaderDestination {
+  kind: "experiment-reader";
+  experimentId: MobileExperimentId;
+  sectionId: string;
+  evidenceId?: string;
+  canonicalPath: string;
+}
+
 export type MobileAtlasRouteDestination =
   | MobileAtlasOverviewDestination
   | MobileCaseStudyReaderDestination
   | MobileFrameworkReaderDestination
+  | MobileExperimentReaderDestination
   | MobileAtlasDeferredDestination;
 
 export type MobileReaderHistoryIntent = "push" | "replace";
@@ -75,6 +89,10 @@ function isMobileCaseStudyProjectId(
 
 function isMobileFrameworkId(value: string): value is MobileFrameworkId {
   return MOBILE_FRAMEWORKS.some((framework) => framework.id === value);
+}
+
+function isMobileExperimentId(value: string): value is MobileExperimentId {
+  return MOBILE_EXPERIMENTS.some((experiment) => experiment.id === value);
 }
 
 const MOBILE_SYSTEM_IDS = [
@@ -120,6 +138,19 @@ export function mobileDestinationFromAtlasRoute(
       return {
         kind: "framework-reader",
         frameworkId: publicEntryId,
+        sectionId: route.sectionId,
+        evidenceId: route.evidenceId,
+        canonicalPath: route.canonicalPath,
+      };
+    }
+
+    if (
+      activeSystemId === "experiments" &&
+      isMobileExperimentId(publicEntryId)
+    ) {
+      return {
+        kind: "experiment-reader",
+        experimentId: publicEntryId,
         sectionId: route.sectionId,
         evidenceId: route.evidenceId,
         canonicalPath: route.canonicalPath,
@@ -220,6 +251,47 @@ export function mobileFrameworkEvidencePath(
 }
 
 export function mobileFrameworkHistoryIntent(
+  event: "reader-entry" | "section-change" | "evidence-open",
+): MobileReaderHistoryIntent {
+  return historyIntentForReaderEvent(event);
+}
+
+export function mobileExperimentReaderEntryPath(
+  experimentId: MobileExperimentId,
+): string | null {
+  const firstSection = mobileExperimentFor(experimentId).sections[0];
+  return firstSection
+    ? mobileExperimentSectionPath(experimentId, firstSection.id)
+    : null;
+}
+
+export function mobileExperimentSectionPath(
+  experimentId: MobileExperimentId,
+  sectionId: string,
+): string | null {
+  const experiment = mobileExperimentFor(experimentId);
+  if (!experiment.sections.some((section) => section.id === sectionId)) {
+    return null;
+  }
+  return atlasEntrySectionPath(experimentId, sectionId);
+}
+
+export function mobileExperimentEvidencePath(
+  experimentId: MobileExperimentId,
+  sectionId: string,
+  evidenceId: string,
+): string | null {
+  const experiment = mobileExperimentFor(experimentId);
+  const section = experiment.sections.find(
+    (candidate) => candidate.id === sectionId,
+  );
+  if (!section?.evidence?.some((evidence) => evidence.id === evidenceId)) {
+    return null;
+  }
+  return atlasEntryEvidencePath(experimentId, sectionId, evidenceId);
+}
+
+export function mobileExperimentHistoryIntent(
   event: "reader-entry" | "section-change" | "evidence-open",
 ): MobileReaderHistoryIntent {
   return historyIntentForReaderEvent(event);

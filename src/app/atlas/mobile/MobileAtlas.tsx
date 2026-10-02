@@ -45,6 +45,7 @@ import {
 } from "./frameworks/frameworkRegistry";
 import {
   DEFAULT_MOBILE_EXPERIMENT_ID,
+  mobileExperimentFor,
 } from "./experiments/config/experimentsContent";
 import {
   mobileDestinationFromPath,
@@ -54,11 +55,15 @@ import {
   mobileFrameworkEvidencePath,
   mobileFrameworkReaderEntryPath,
   mobileFrameworkSectionPath,
+  mobileExperimentEvidencePath,
+  mobileExperimentReaderEntryPath,
+  mobileExperimentSectionPath,
   mobileOverviewDestinationPath,
   type MobileAtlasOverviewDestination,
   type MobileAtlasRouteDestination,
   type MobileCaseStudyReaderDestination,
   type MobileFrameworkReaderDestination,
+  type MobileExperimentReaderDestination,
 } from "./mobileRouteState";
 import {
   pushAtlasPath,
@@ -172,7 +177,8 @@ export default function MobileAtlas() {
   const initialOverviewDestination =
     initialRouteDestination?.kind === "deeper" ||
     initialRouteDestination?.kind === "case-study-reader" ||
-    initialRouteDestination?.kind === "framework-reader"
+    initialRouteDestination?.kind === "framework-reader" ||
+    initialRouteDestination?.kind === "experiment-reader"
       ? null
       : initialRouteDestination;
   const initialCaseStudyReaderDestination =
@@ -181,6 +187,10 @@ export default function MobileAtlas() {
       : null;
   const initialFrameworkReaderDestination =
     initialRouteDestination?.kind === "framework-reader"
+      ? initialRouteDestination
+      : null;
+  const initialExperimentReaderDestination =
+    initialRouteDestination?.kind === "experiment-reader"
       ? initialRouteDestination
       : null;
 
@@ -200,6 +210,7 @@ export default function MobileAtlas() {
         ? "framework-evidence"
         : "framework-reading";
     }
+    if (initialExperimentReaderDestination) return "experiment-reading";
     return "atlas-landing";
   });
   const historyRestorationRef = useRef(false);
@@ -208,6 +219,7 @@ export default function MobileAtlas() {
   const [experimentsRestoreKey, setExperimentsRestoreKey] = useState(0);
   const [caseStudyReaderRestoreKey, setCaseStudyReaderRestoreKey] = useState(0);
   const [frameworkReaderRestoreKey, setFrameworkReaderRestoreKey] = useState(0);
+  const [experimentReaderRestoreKey, setExperimentReaderRestoreKey] = useState(0);
 
   const initialCaseStudySelectionId =
     initialOverviewDestination?.kind === "case-studies"
@@ -266,10 +278,19 @@ export default function MobileAtlas() {
 
   const [activeExperimentId, setActiveExperimentId] =
     useState<MobileExperimentId>(() =>
-      initialOverviewDestination?.kind === "experiments" &&
+      initialExperimentReaderDestination?.experimentId ??
+      (initialOverviewDestination?.kind === "experiments" &&
       initialOverviewDestination.id !== "experiments"
         ? initialOverviewDestination.id as MobileExperimentId
-        : DEFAULT_MOBILE_EXPERIMENT_ID,
+        : DEFAULT_MOBILE_EXPERIMENT_ID),
+    );
+  const [activeExperimentSectionId, setActiveExperimentSectionId] =
+    useState<string | null>(
+      initialExperimentReaderDestination?.sectionId ?? null,
+    );
+  const [activeExperimentEvidenceId, setActiveExperimentEvidenceId] =
+    useState<string | null>(
+      initialExperimentReaderDestination?.evidenceId ?? null,
     );
   const [returnExperimentId, setReturnExperimentId] =
     useState<MobileExperimentId | null>(null);
@@ -284,6 +305,8 @@ export default function MobileAtlas() {
     useState(false);
   const pendingExperimentRouteIdRef =
     useRef<"experiments" | MobileExperimentId>("experiments");
+  const experimentReaderPushedRef = useRef(false);
+  const experimentEvidencePushedRef = useRef(false);
 
   const pushMobileDestination = useCallback(
     (destination: MobileAtlasOverviewDestination) => {
@@ -542,7 +565,8 @@ export default function MobileAtlas() {
       destination:
         | MobileAtlasOverviewDestination
         | MobileCaseStudyReaderDestination
-        | MobileFrameworkReaderDestination,
+        | MobileFrameworkReaderDestination
+        | MobileExperimentReaderDestination,
     ) => {
       historyRestorationRef.current = true;
       setObservatoryPhase("closed");
@@ -558,6 +582,8 @@ export default function MobileAtlas() {
         caseStudyEvidencePushedRef.current = false;
         frameworkReaderPushedRef.current = false;
         frameworkEvidencePushedRef.current = false;
+        experimentReaderPushedRef.current = false;
+        experimentEvidencePushedRef.current = false;
       } else if (destination.kind === "case-studies") {
         setCaseStudyRestoredSelectionId(destination.id);
         setActiveCaseStudyProjectId(null);
@@ -610,6 +636,19 @@ export default function MobileAtlas() {
         frameworkEvidencePushedRef.current = Boolean(
           destination.evidenceId,
         );
+      } else if (destination.kind === "experiment-reader") {
+        setActiveExperimentId(destination.experimentId);
+        setActiveExperimentSectionId(destination.sectionId);
+        setActiveExperimentEvidenceId(destination.evidenceId ?? null);
+        setInitialExperimentSearchId(null);
+        setReturnExperimentId(null);
+        setReturningExperimentsToAtlas(false);
+        setStateRaw("experiment-reading");
+        setExperimentReaderRestoreKey((key) => key + 1);
+        experimentReaderPushedRef.current = true;
+        experimentEvidencePushedRef.current = Boolean(
+          destination.evidenceId,
+        );
       } else {
         const selectionId = destination.id;
         setReturnExperimentId(null);
@@ -623,6 +662,8 @@ export default function MobileAtlas() {
         }
         setStateRaw("experiments-focus");
         setExperimentsRestoreKey((key) => key + 1);
+        experimentReaderPushedRef.current = false;
+        experimentEvidencePushedRef.current = false;
       }
 
       requestAnimationFrame(() => {
@@ -669,6 +710,21 @@ export default function MobileAtlas() {
     activeFrameworkEvidenceId,
     activeFrameworkId,
     activeFrameworkSectionId,
+    state,
+  ]);
+
+  useEffect(() => {
+    if (state !== "experiment-reading" || activeExperimentEvidenceId) return;
+    if (!activeExperimentSectionId) return;
+    const path = mobileExperimentSectionPath(
+      activeExperimentId,
+      activeExperimentSectionId,
+    );
+    if (path) replaceAtlasPath(path);
+  }, [
+    activeExperimentEvidenceId,
+    activeExperimentId,
+    activeExperimentSectionId,
     state,
   ]);
 
@@ -1209,9 +1265,19 @@ export default function MobileAtlas() {
                   });
                 }}
                 onExplore={(experimentId) => {
+                  const experiment = mobileExperimentFor(experimentId);
+                  const firstSectionId = experiment.sections[0]?.id ?? null;
                   setInitialExperimentSearchId(null);
                   setReturnExperimentId(null);
                   setActiveExperimentId(experimentId);
+                  setActiveExperimentSectionId(firstSectionId);
+                  setActiveExperimentEvidenceId(null);
+                  experimentReaderPushedRef.current = true;
+                  experimentEvidencePushedRef.current = false;
+                  const readerPath = mobileExperimentReaderEntryPath(
+                    experimentId,
+                  );
+                  if (readerPath) pushAtlasPath(readerPath);
                   setState("experiment-reading");
                 }}
                 onReturnExperimentComplete={() => {
@@ -1565,7 +1631,60 @@ export default function MobileAtlas() {
                 <ExperimentsScene
                   state="experiment-reading"
                   activeExperimentId={activeExperimentId}
+                  initialSectionId={activeExperimentSectionId}
+                  initialEvidenceId={activeExperimentEvidenceId}
+                  routeRestoreKey={experimentReaderRestoreKey}
+                  onActiveSectionChange={setActiveExperimentSectionId}
+                  onEvidenceOpen={(sectionId, evidence) => {
+                    setActiveExperimentSectionId(sectionId);
+                    setActiveExperimentEvidenceId(evidence.id);
+                    experimentEvidencePushedRef.current = true;
+                    const path = mobileExperimentEvidencePath(
+                      activeExperimentId,
+                      sectionId,
+                      evidence.id,
+                    );
+                    if (path) pushAtlasPath(path);
+                  }}
+                  onEvidenceChange={(sectionId, evidence) => {
+                    setActiveExperimentEvidenceId(evidence.id);
+                    const path = mobileExperimentEvidencePath(
+                      activeExperimentId,
+                      sectionId,
+                      evidence.id,
+                    );
+                    if (path) replaceAtlasPath(path);
+                  }}
+                  onEvidenceClose={(sectionId) => {
+                    if (
+                      experimentEvidencePushedRef.current &&
+                      window.history.length > 1
+                    ) {
+                      experimentEvidencePushedRef.current = false;
+                      window.history.back();
+                      return;
+                    }
+                    setActiveExperimentEvidenceId(null);
+                    const path = mobileExperimentSectionPath(
+                      activeExperimentId,
+                      sectionId,
+                    );
+                    if (path) replaceAtlasPath(path);
+                  }}
                   onBack={() => {
+                    if (
+                      experimentReaderPushedRef.current &&
+                      window.history.length > 1
+                    ) {
+                      experimentReaderPushedRef.current = false;
+                      window.history.back();
+                      return;
+                    }
+                    const previewPath = mobileOverviewDestinationPath({
+                      kind: "experiments",
+                      id: activeExperimentId,
+                    });
+                    if (previewPath) replaceAtlasPath(previewPath);
                     setReturnExperimentId(activeExperimentId);
                     setState("experiments-focus");
                   }}

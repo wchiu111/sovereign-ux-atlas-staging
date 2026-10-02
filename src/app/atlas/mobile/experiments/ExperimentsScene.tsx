@@ -12,6 +12,7 @@ import type {
   ExperimentOverviewId,
   MobileExperimentId,
 } from "./experimentsTypes";
+import type { ConstellationEvidence } from "./template/constellationTypes";
 import ExperimentsPreviewDrawer from "./surfaces/ExperimentsPreviewDrawer";
 import ConstellationReadingSurface from "./template/ConstellationReadingSurface";
 import useConstellationChoreography from "./template/useConstellationChoreography";
@@ -30,6 +31,19 @@ interface ExperimentsSceneProps {
   onOverviewSelection?: (id: ExperimentOverviewId) => void;
   onExplore?: (id: MobileExperimentId) => void;
   onReturnExperimentComplete?: () => void;
+  initialSectionId?: string | null;
+  initialEvidenceId?: string | null;
+  routeRestoreKey?: number;
+  onActiveSectionChange?: (sectionId: string) => void;
+  onEvidenceOpen?: (
+    sectionId: string,
+    evidence: ConstellationEvidence,
+  ) => void;
+  onEvidenceChange?: (
+    sectionId: string,
+    evidence: ConstellationEvidence,
+  ) => void;
+  onEvidenceClose?: (sectionId: string) => void;
   onBack: () => void;
 }
 
@@ -160,6 +174,13 @@ export default function ExperimentsScene({
   onOverviewSelection = () => {},
   onExplore = () => {},
   onReturnExperimentComplete,
+  initialSectionId = null,
+  initialEvidenceId = null,
+  routeRestoreKey = 0,
+  onActiveSectionChange,
+  onEvidenceOpen,
+  onEvidenceChange,
+  onEvidenceClose,
   onBack,
 }: ExperimentsSceneProps) {
   const activeExperiment = mobileExperimentFor(activeExperimentId);
@@ -169,6 +190,13 @@ export default function ExperimentsScene({
       <ConstellationReadingSurface
         item={activeExperiment}
         domainColor={EXPERIMENTS_TEMPLATE.parent.color}
+        initialSectionId={initialSectionId}
+        initialEvidenceId={initialEvidenceId}
+        routeRestoreKey={routeRestoreKey}
+        onActiveSectionChange={onActiveSectionChange}
+        onEvidenceOpen={onEvidenceOpen}
+        onEvidenceChange={onEvidenceChange}
+        onEvidenceClose={onEvidenceClose}
         onBack={onBack}
       />
     );
