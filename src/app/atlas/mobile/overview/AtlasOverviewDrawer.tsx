@@ -94,6 +94,7 @@ export default function AtlasOverviewDrawer({
         style={{
           width: "100%",
           minWidth: 0,
+          minHeight: 0,
           flex: 1,
           display: "flex",
           flexDirection: "column",
@@ -106,6 +107,7 @@ export default function AtlasOverviewDrawer({
             justifyContent: "space-between",
             gap: 16,
             marginBottom: 12,
+            flexShrink: 0,
           }}
         >
           <div
@@ -144,15 +146,20 @@ export default function AtlasOverviewDrawer({
             height: 0.5,
             background: `${color}24`,
             marginBottom: 16,
+            flexShrink: 0,
           }}
         />
 
         <div
           style={{
             minWidth: 0,
+            minHeight: 0,
             flex: compact ? "0 0 auto" : 1,
             display: "flex",
             flexDirection: "column",
+            overflowY: "auto",
+            overscrollBehaviorY: "contain",
+            WebkitOverflowScrolling: "touch",
           }}
         >
           {children}
@@ -164,6 +171,7 @@ export default function AtlasOverviewDrawer({
               marginTop: compact ? 22 : "auto",
               paddingTop: 18,
               borderTop: "0.5px solid rgba(240,233,216,0.10)",
+              flexShrink: 0,
             }}
           >
             {footer}
