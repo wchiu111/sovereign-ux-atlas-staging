@@ -58,12 +58,15 @@ import {
   mobileExperimentEvidencePath,
   mobileExperimentReaderEntryPath,
   mobileExperimentSectionPath,
+  mobileObservatoryAtlasPath,
+  mobileObservatoryPath,
   mobileOverviewDestinationPath,
   type MobileAtlasOverviewDestination,
   type MobileAtlasRouteDestination,
   type MobileCaseStudyReaderDestination,
   type MobileFrameworkReaderDestination,
   type MobileExperimentReaderDestination,
+  type MobileObservatoryDestination,
 } from "./mobileRouteState";
 import {
   pushAtlasPath,
@@ -191,6 +194,10 @@ export default function MobileAtlas() {
       : null;
   const initialExperimentReaderDestination =
     initialRouteDestination?.kind === "experiment-reader"
+      ? initialRouteDestination
+      : null;
+  const initialObservatoryDestination =
+    initialRouteDestination?.kind === "observatory"
       ? initialRouteDestination
       : null;
 
@@ -370,13 +377,23 @@ export default function MobileAtlas() {
   });
 
   const [observatoryPhase, setObservatoryPhase] =
-    useState<ObservatoryRuntimePhase>("closed");
+    useState<ObservatoryRuntimePhase>(
+      initialObservatoryDestination ? "open" : "closed",
+    );
   const [pendingObservatoryDestinationId, setPendingObservatoryDestinationId] =
-    useState<ObservatoryPanelId | null>(null);
+    useState<ObservatoryPanelId | null>(
+      initialObservatoryDestination?.panelId ?? null,
+    );
+  const [observatoryRestoreKey, setObservatoryRestoreKey] = useState(0);
   const [observatoryPrefersReducedMotion, setObservatoryPrefersReducedMotion] =
     useState(false);
   const observatoryTimerRef = useRef<number | null>(null);
   const observatoryRafRef = useRef<number | null>(null);
+  const pendingObservatoryDestinationRef = useRef<ObservatoryPanelId | null>(
+    initialObservatoryDestination?.panelId ?? null,
+  );
+  const observatoryRoomPushedRef = useRef(false);
+  const observatoryPanelPushedRef = useRef(false);
 
   const observatoryVisible = observatoryPhase !== "closed";
   const observatoryDirection: ObservatorySpatialDirection | null =
@@ -420,7 +437,7 @@ export default function MobileAtlas() {
     }
   }, []);
 
-  const enterObservatory = useCallback(() => {
+  const enterObservatory = useCallback((panelId: ObservatoryPanelId | null = null) => {
     if (
       observatoryVisible ||
       experimentEntryInProgress ||
@@ -430,6 +447,8 @@ export default function MobileAtlas() {
     }
 
     clearObservatoryTransition();
+    pendingObservatoryDestinationRef.current = panelId;
+    setPendingObservatoryDestinationId(panelId);
     setObservatoryPhase("pre-enter");
 
     observatoryRafRef.current = requestAnimationFrame(() => {
@@ -441,6 +460,19 @@ export default function MobileAtlas() {
 
     observatoryTimerRef.current = window.setTimeout(() => {
       setObservatoryPhase("open");
+      const roomPath = mobileObservatoryPath();
+      if (roomPath) {
+        observatoryRoomPushedRef.current = true;
+        pushAtlasPath(roomPath);
+      }
+      const destinationId = pendingObservatoryDestinationRef.current;
+      if (destinationId) {
+        const panelPath = mobileObservatoryPath(destinationId);
+        if (panelPath) {
+          observatoryPanelPushedRef.current = true;
+          pushAtlasPath(panelPath);
+        }
+      }
       observatoryTimerRef.current = null;
     }, observatoryTransitionDuration);
   }, [
@@ -460,6 +492,17 @@ export default function MobileAtlas() {
     observatoryTimerRef.current = window.setTimeout(() => {
       setObservatoryPhase("closed");
       setPendingObservatoryDestinationId(null);
+      pendingObservatoryDestinationRef.current = null;
+      observatoryPanelPushedRef.current = false;
+      if (
+        observatoryRoomPushedRef.current &&
+        window.history.length > 1
+      ) {
+        observatoryRoomPushedRef.current = false;
+        window.history.back();
+      } else {
+        replaceAtlasPath(mobileObservatoryAtlasPath());
+      }
       observatoryTimerRef.current = null;
     }, observatoryTransitionDuration);
   }, [
@@ -507,10 +550,9 @@ export default function MobileAtlas() {
         return;
       }
 
-      setPendingObservatoryDestinationId(
+      enterObservatory(
         destination.id === "observatory" ? null : destination.id,
       );
-      enterObservatory();
     },
     [enterExperiments, enterObservatory],
   );
@@ -566,11 +608,26 @@ export default function MobileAtlas() {
         | MobileAtlasOverviewDestination
         | MobileCaseStudyReaderDestination
         | MobileFrameworkReaderDestination
-        | MobileExperimentReaderDestination,
+        | MobileExperimentReaderDestination
+        | MobileObservatoryDestination,
     ) => {
       historyRestorationRef.current = true;
+      if (destination.kind === "observatory") {
+        clearObservatoryTransition();
+        pendingObservatoryDestinationRef.current = destination.panelId;
+        setPendingObservatoryDestinationId(destination.panelId);
+        setObservatoryPhase("open");
+        setObservatoryRestoreKey((key) => key + 1);
+        observatoryRoomPushedRef.current = true;
+        observatoryPanelPushedRef.current = Boolean(destination.panelId);
+        requestAnimationFrame(() => {
+          historyRestorationRef.current = false;
+        });
+        return;
+      }
       setObservatoryPhase("closed");
       setPendingObservatoryDestinationId(null);
+      pendingObservatoryDestinationRef.current = null;
 
       if (destination.kind === "atlas") {
         setActiveCaseStudyProjectId(null);
@@ -584,6 +641,8 @@ export default function MobileAtlas() {
         frameworkEvidencePushedRef.current = false;
         experimentReaderPushedRef.current = false;
         experimentEvidencePushedRef.current = false;
+        observatoryRoomPushedRef.current = false;
+        observatoryPanelPushedRef.current = false;
       } else if (destination.kind === "case-studies") {
         setCaseStudyRestoredSelectionId(destination.id);
         setActiveCaseStudyProjectId(null);
@@ -670,7 +729,7 @@ export default function MobileAtlas() {
         historyRestorationRef.current = false;
       });
     },
-    [],
+    [clearObservatoryTransition],
   );
 
   useEffect(() => {
@@ -1068,7 +1127,7 @@ export default function MobileAtlas() {
                   fadeInDurationMs={observatoryChromeFadeDuration}
                   fadeInDelayMs={observatoryChromeFadeDelay}
                   disabled={observatoryPhase !== "closed"}
-                  onCommit={enterObservatory}
+                  onCommit={() => enterObservatory(null)}
                 />
               )}
 
@@ -1342,11 +1401,33 @@ export default function MobileAtlas() {
                 <ObservatoryScene
                   onReturnToAtlas={exitObservatory}
                   presentationScale={observatoryScale}
+                  routeRestoreKey={observatoryRestoreKey}
                   initialDestinationId={
                     observatoryPhase === "open"
                       ? pendingObservatoryDestinationId
                       : null
                   }
+                  onPanelCommit={(panelId) => {
+                    pendingObservatoryDestinationRef.current = panelId;
+                    setPendingObservatoryDestinationId(panelId);
+                    observatoryPanelPushedRef.current = true;
+                    const path = mobileObservatoryPath(panelId);
+                    if (path) pushAtlasPath(path);
+                  }}
+                  onPanelClose={() => {
+                    if (
+                      observatoryPanelPushedRef.current &&
+                      window.history.length > 1
+                    ) {
+                      observatoryPanelPushedRef.current = false;
+                      window.history.back();
+                      return;
+                    }
+                    pendingObservatoryDestinationRef.current = null;
+                    setPendingObservatoryDestinationId(null);
+                    const path = mobileObservatoryPath();
+                    if (path) replaceAtlasPath(path);
+                  }}
                 />
               </div>
             </div>

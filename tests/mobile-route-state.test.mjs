@@ -483,9 +483,62 @@ try {
     );
   });
 
-  await test("leaves Observatory routes for a later Mobile pass", () => {
-    assert.equal(routes.mobileDestinationFromPath("/observatory"), null);
-    assert.equal(routes.mobileDestinationFromPath("/observatory/about"), null);
+  await test("maps the Observatory room destination", () => {
+    assert.deepEqual(routes.mobileDestinationFromPath("/observatory"), {
+      kind: "observatory",
+      panelId: null,
+      canonicalPath: "/observatory",
+    });
+  });
+
+  await test("maps every canonical Observatory panel", () => {
+    for (const panelId of ["about", "journey", "philosophy", "contact"]) {
+      assert.deepEqual(
+        routes.mobileDestinationFromPath(`/observatory/${panelId}`),
+        {
+          kind: "observatory",
+          panelId,
+          canonicalPath: `/observatory/${panelId}`,
+        },
+      );
+      assert.equal(
+        routes.mobileObservatoryPath(panelId),
+        `/observatory/${panelId}`,
+      );
+    }
+  });
+
+  await test("rejects invalid Mobile Observatory routes", () => {
+    assert.equal(
+      routes.mobileDestinationFromPath("/observatory/timeline"),
+      null,
+    );
+    assert.equal(
+      routes.mobileDestinationFromPath("/observatory/not-a-panel"),
+      null,
+    );
+  });
+
+  await test("classifies Observatory room and panel history", () => {
+    assert.equal(routes.mobileObservatoryPath(), "/observatory");
+    assert.equal(
+      routes.mobileObservatoryHistoryIntent("room-entry"),
+      "push",
+    );
+    assert.equal(
+      routes.mobileObservatoryHistoryIntent("panel-commit"),
+      "push",
+    );
+  });
+
+  await test("normalizes panel close safely based on provenance", () => {
+    assert.equal(routes.mobileObservatoryPanelCloseIntent(true), "back");
+    assert.equal(routes.mobileObservatoryPanelCloseIntent(false), "replace");
+    assert.equal(routes.mobileObservatoryPath(), "/observatory");
+  });
+
+  await test("maps Enter Atlas to the Atlas root", () => {
+    assert.equal(routes.mobileObservatoryAtlasPath(), "/");
   });
 } finally {
   await server.close();

@@ -3,6 +3,8 @@ import {
   atlasEntryEvidencePath,
   atlasEntrySectionPath,
   atlasSystemPath,
+  observatoryPanelPath,
+  observatoryRootPath,
   parseAtlasRoute,
   type AtlasRoute,
 } from "../../routing/atlasRoutes";
@@ -18,6 +20,7 @@ import {
   mobileExperimentFor,
 } from "./experiments/config/experimentsContent";
 import type { MobileExperimentId } from "./experiments/experimentsTypes";
+import type { ObservatoryPanelId } from "./observatory/observatoryTypes";
 
 export type MobileAtlasOverviewDestination =
   | { kind: "atlas" }
@@ -59,11 +62,18 @@ export interface MobileExperimentReaderDestination {
   canonicalPath: string;
 }
 
+export interface MobileObservatoryDestination {
+  kind: "observatory";
+  panelId: ObservatoryPanelId | null;
+  canonicalPath: string;
+}
+
 export type MobileAtlasRouteDestination =
   | MobileAtlasOverviewDestination
   | MobileCaseStudyReaderDestination
   | MobileFrameworkReaderDestination
   | MobileExperimentReaderDestination
+  | MobileObservatoryDestination
   | MobileAtlasDeferredDestination;
 
 export type MobileReaderHistoryIntent = "push" | "replace";
@@ -110,7 +120,14 @@ function isMobileSystemId(value: string | null): value is MobileSystemId {
 export function mobileDestinationFromAtlasRoute(
   route: AtlasRoute | null,
 ): MobileAtlasRouteDestination | null {
-  if (!route || route.observatory) return null;
+  if (!route) return null;
+  if (route.observatory) {
+    return {
+      kind: "observatory",
+      panelId: route.observatory.slug,
+      canonicalPath: route.canonicalPath,
+    };
+  }
   if (route.canonicalPath === "/") return { kind: "atlas" };
 
   const { activeSystemId, activePlanetId } = route.atlasState;
@@ -295,6 +312,28 @@ export function mobileExperimentHistoryIntent(
   event: "reader-entry" | "section-change" | "evidence-open",
 ): MobileReaderHistoryIntent {
   return historyIntentForReaderEvent(event);
+}
+
+export function mobileObservatoryPath(
+  panelId: ObservatoryPanelId | null = null,
+): string | null {
+  return panelId ? observatoryPanelPath(panelId) : observatoryRootPath();
+}
+
+export function mobileObservatoryHistoryIntent(
+  event: "room-entry" | "panel-commit",
+): "push" {
+  return "push";
+}
+
+export function mobileObservatoryPanelCloseIntent(
+  panelWasPushed: boolean,
+): "back" | "replace" {
+  return panelWasPushed ? "back" : "replace";
+}
+
+export function mobileObservatoryAtlasPath(): "/" {
+  return "/";
 }
 
 export function mobileDestinationFromPath(
