@@ -6,6 +6,7 @@ export const CASE_STUDIES_PATH = "/case-studies";
 export const EXPERIMENTS_PATH = "/experiments";
 export const FRAMEWORKS_PATH = "/frameworks";
 export const OBSERVATORY_PATH = "/observatory";
+export const ATLAS_PATH_CHANGE_EVENT = "atlas:pathchange";
 
 export type ObservatoryRouteSlug =
   | "about"
@@ -362,9 +363,11 @@ export function currentBrowserPath(): string {
 export function pushAtlasPath(path: string): void {
   if (typeof window === "undefined" || currentBrowserPath() === path) return;
   window.history.pushState({}, "", path);
+  window.dispatchEvent(new Event(ATLAS_PATH_CHANGE_EVENT));
 }
 
 export function replaceAtlasPath(path: string): void {
   if (typeof window === "undefined" || currentBrowserPath() === path) return;
   window.history.replaceState({}, "", path);
+  window.dispatchEvent(new Event(ATLAS_PATH_CHANGE_EVENT));
 }

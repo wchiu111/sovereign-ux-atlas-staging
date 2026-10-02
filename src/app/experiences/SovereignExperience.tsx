@@ -1,17 +1,41 @@
 import { useEffect, useRef, useState } from "react";
 import AtlasExplorer from "../atlas/AtlasExplorer";
+import {
+  observatoryPanelPathForDesktopPanel,
+  observatoryRootPath,
+  parseAtlasRoute,
+  pushAtlasPath,
+  replaceAtlasPath,
+  type DesktopObservatoryPanelId,
+} from "../routing/atlasRoutes";
 import ProfileExperience from "./ProfileExperience";
+import type { ProfileHotspotId } from "./profile";
 import type { SovereignMode } from "./sovereignExperience.types";
 
 type SpatialTransition = "toObservatory" | "toAtlas" | null;
 
 const SPATIAL_TRANSITION_DURATION = 1420;
 
+function initialObservatoryRoute() {
+  if (typeof window === "undefined") return null;
+  const route = parseAtlasRoute(window.location);
+  return route?.observatory ?? null;
+}
+
 export default function SovereignExperience() {
-  const [mode, setMode] = useState<SovereignMode>("atlas");
+  const initialRoute = useRef(initialObservatoryRoute());
+  const [mode, setMode] = useState<SovereignMode>(
+    initialRoute.current ? "profile" : "atlas",
+  );
+  const [profileFocus, setProfileFocus] =
+    useState<DesktopObservatoryPanelId | null>(
+      initialRoute.current?.desktopPanelId ?? null,
+    );
   const [spatialTransition, setSpatialTransition] =
     useState<SpatialTransition>(null);
   const transitionTimerRef = useRef<number | null>(null);
+  const observatoryRoomHistoryRef = useRef(false);
+  const observatoryPanelHistoryRef = useRef(false);
   const [reducedMotion, setReducedMotion] = useState(false);
 
   useEffect(() => {
@@ -23,7 +47,33 @@ export default function SovereignExperience() {
   }, []);
 
   useEffect(() => {
+    const restoreRoute = () => {
+      const route = parseAtlasRoute(window.location);
+      if (route?.observatory) {
+        clearTransitionTimer();
+        setSpatialTransition(null);
+        setMode("profile");
+        setProfileFocus(route.observatory.desktopPanelId);
+        observatoryRoomHistoryRef.current = true;
+        observatoryPanelHistoryRef.current = Boolean(
+          route.observatory.desktopPanelId,
+        );
+        return;
+      }
+
+      if (route) {
+        clearTransitionTimer();
+        setSpatialTransition(null);
+        setProfileFocus(null);
+        setMode("atlas");
+        observatoryRoomHistoryRef.current = false;
+        observatoryPanelHistoryRef.current = false;
+      }
+    };
+
+    window.addEventListener("popstate", restoreRoute);
     return () => {
+      window.removeEventListener("popstate", restoreRoute);
       if (transitionTimerRef.current !== null) {
         window.clearTimeout(transitionTimerRef.current);
       }
@@ -37,12 +87,13 @@ export default function SovereignExperience() {
     }
   };
 
-  const completeSpatialTransition = () => {
+  const completeSpatialTransition = (onComplete: () => void) => {
     clearTransitionTimer();
 
     transitionTimerRef.current = window.setTimeout(() => {
       setSpatialTransition(null);
       transitionTimerRef.current = null;
+      onComplete();
     }, reducedMotion ? 0 : SPATIAL_TRANSITION_DURATION);
   };
 
@@ -51,7 +102,10 @@ export default function SovereignExperience() {
 
     setSpatialTransition("toObservatory");
     setMode("profile");
-    completeSpatialTransition();
+    completeSpatialTransition(() => {
+      pushAtlasPath(observatoryRootPath());
+      observatoryRoomHistoryRef.current = true;
+    });
   };
 
   const returnToAtlas = () => {
@@ -59,7 +113,35 @@ export default function SovereignExperience() {
 
     setSpatialTransition("toAtlas");
     setMode("atlas");
-    completeSpatialTransition();
+    completeSpatialTransition(() => {
+      setProfileFocus(null);
+      observatoryPanelHistoryRef.current = false;
+      if (observatoryRoomHistoryRef.current && window.history.length > 1) {
+        window.history.back();
+      } else {
+        replaceAtlasPath("/");
+      }
+      observatoryRoomHistoryRef.current = false;
+    });
+  };
+
+  const openProfileFocus = (focus: ProfileHotspotId) => {
+    if (focus === "atlas") return;
+    const path = observatoryPanelPathForDesktopPanel(focus);
+    if (!path) return;
+    setProfileFocus(focus);
+    pushAtlasPath(path);
+    observatoryPanelHistoryRef.current = true;
+  };
+
+  const closeProfileFocus = () => {
+    if (observatoryPanelHistoryRef.current && window.history.length > 1) {
+      window.history.back();
+    } else {
+      setProfileFocus(null);
+      replaceAtlasPath(observatoryRootPath());
+    }
+    observatoryPanelHistoryRef.current = false;
   };
 
   return (
@@ -94,6 +176,9 @@ export default function SovereignExperience() {
         >
           <ProfileExperience
             onReturnToAtlas={returnToAtlas}
+            focus={profileFocus}
+            onFocus={openProfileFocus}
+            onCloseFocus={closeProfileFocus}
           />
         </div>
       )}
