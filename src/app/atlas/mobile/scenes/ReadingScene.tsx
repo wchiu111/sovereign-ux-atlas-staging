@@ -19,26 +19,51 @@ import type {
 
 function CaseStudyReadingSurface({
   projectId,
+  initialSectionId,
+  initialEvidenceId,
+  routeRestoreKey,
+  onActiveSectionChange,
+  onEvidenceOpen,
+  onEvidenceClose,
   onBack,
 }: {
   projectId: MobileCaseStudyProjectId | null;
+  initialSectionId?: string | null;
+  initialEvidenceId?: string | null;
+  routeRestoreKey?: number;
+  onActiveSectionChange?: (sectionId: string) => void;
+  onEvidenceOpen?: (item: MobileEvidenceItem) => void;
+  onEvidenceClose?: (item: MobileEvidenceItem) => void;
   onBack: () => void;
 }) {
   const caseStudyDocument = mobileCaseStudyDocumentFor(projectId);
   const sections = caseStudyDocument.sections;
+  const resolvedInitialSection =
+    sections.find((section) => section.id === initialSectionId) ?? sections[0];
+  const resolvedInitialEvidence = initialEvidenceId
+    ? caseStudyDocument.evidence.find(
+        (item) =>
+          item.id === initialEvidenceId &&
+          item.sectionId === resolvedInitialSection.id,
+      ) ?? null
+    : null;
   const scrollRef = useRef<HTMLDivElement>(null);
   const chromeRef = useRef<HTMLDivElement>(null);
   const sectionRefs = useRef(new Map<string, HTMLElement>());
 
-  const [activeId, setActiveId] = useState<string>(sections[0].id);
+  const [activeId, setActiveId] = useState<string>(resolvedInitialSection.id);
   const [selectedEvidence, setSelectedEvidence] =
-    useState<MobileEvidenceItem | null>(null);
+    useState<MobileEvidenceItem | null>(resolvedInitialEvidence);
   const [headerElevated, setHeaderElevated] = useState(false);
   const [isExitingReading, setIsExitingReading] = useState(false);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   const [chromeHeight, setChromeHeight] = useState(114);
   const exitTimerRef = useRef<number | null>(null);
   const evidenceTriggerRef = useRef<HTMLElement | null>(null);
+  const previousEvidenceRef = useRef<MobileEvidenceItem | null>(
+    resolvedInitialEvidence,
+  );
+  const restoringRouteRef = useRef(true);
 
   const sectionIds = useMemo(
     () => sections.map((section) => section.id),
@@ -46,10 +71,48 @@ function CaseStudyReadingSurface({
   );
 
   useEffect(() => {
-    setActiveId(sections[0].id);
-    setSelectedEvidence(null);
-    scrollRef.current?.scrollTo({ top: 0, behavior: "auto" });
-  }, [caseStudyDocument.id, sections]);
+    restoringRouteRef.current = true;
+    setActiveId(resolvedInitialSection.id);
+    const positionRequestedSection = () => {
+      const node = sectionRefs.current.get(resolvedInitialSection.id);
+      const scroller = scrollRef.current;
+      if (node && scroller) {
+        const scrollerTop = scroller.getBoundingClientRect().top;
+        const nodeTop = node.getBoundingClientRect().top;
+        scroller.scrollTo({
+          top: scroller.scrollTop + nodeTop - scrollerTop - 2,
+          behavior: "auto",
+        });
+      }
+    };
+    const frame = requestAnimationFrame(positionRequestedSection);
+    const layoutTimer = window.setTimeout(positionRequestedSection, 160);
+    const settleTimer = window.setTimeout(() => {
+      positionRequestedSection();
+      restoringRouteRef.current = false;
+    }, 420);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.clearTimeout(layoutTimer);
+      window.clearTimeout(settleTimer);
+    };
+  }, [caseStudyDocument.id, routeRestoreKey]);
+
+  useEffect(() => {
+    setSelectedEvidence(resolvedInitialEvidence);
+  }, [caseStudyDocument.id, routeRestoreKey]);
+
+  useEffect(() => {
+    const previousEvidence = previousEvidenceRef.current;
+    previousEvidenceRef.current = selectedEvidence;
+    if (!previousEvidence || selectedEvidence) return;
+
+    const frame = requestAnimationFrame(() => {
+      evidenceTriggerRef.current?.focus({ preventScroll: true });
+      evidenceTriggerRef.current = null;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [selectedEvidence]);
 
   useEffect(() => {
     const media = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -102,13 +165,16 @@ function CaseStudyReadingSurface({
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (event.key !== "Escape") return;
-      if (selectedEvidence) setSelectedEvidence(null);
-      else requestBack();
+      if (!selectedEvidence) requestBack();
     }
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [isExitingReading, onBack, prefersReducedMotion, selectedEvidence]);
+
+  useEffect(() => {
+    onActiveSectionChange?.(activeId);
+  }, [activeId, onActiveSectionChange]);
 
   useEffect(() => {
     const scroller = scrollRef.current;
@@ -119,6 +185,7 @@ function CaseStudyReadingSurface({
     const updateActiveSection = () => {
       cancelAnimationFrame(frame);
       setHeaderElevated(scroller.scrollTop > 12);
+      if (restoringRouteRef.current) return;
       frame = requestAnimationFrame(() => {
         const rootTop = scroller.getBoundingClientRect().top;
         const activationLine = rootTop + 156;
@@ -304,6 +371,7 @@ function CaseStudyReadingSurface({
                   ? window.document.activeElement
                   : null;
               setSelectedEvidence(item);
+              onEvidenceOpen?.(item);
             }}
           />
         ))}
@@ -355,8 +423,10 @@ function CaseStudyReadingSurface({
           item={selectedEvidence}
           sectionLabel={activeSection.label}
           onClose={() => {
+            const closingEvidence = selectedEvidence;
             setSelectedEvidence(null);
-            window.requestAnimationFrame(() => {
+            onEvidenceClose?.(closingEvidence);
+            requestAnimationFrame(() => {
               evidenceTriggerRef.current?.focus({ preventScroll: true });
               evidenceTriggerRef.current = null;
             });
@@ -369,12 +439,35 @@ function CaseStudyReadingSurface({
 
 interface ReadingSceneProps {
   projectId: MobileCaseStudyProjectId | null;
+  initialSectionId?: string | null;
+  initialEvidenceId?: string | null;
+  routeRestoreKey?: number;
+  onActiveSectionChange?: (sectionId: string) => void;
+  onEvidenceOpen?: (item: MobileEvidenceItem) => void;
+  onEvidenceClose?: (item: MobileEvidenceItem) => void;
   onBack: () => void;
 }
 
 export default function ReadingScene({
   projectId,
+  initialSectionId,
+  initialEvidenceId,
+  routeRestoreKey = 0,
+  onActiveSectionChange,
+  onEvidenceOpen,
+  onEvidenceClose,
   onBack,
 }: ReadingSceneProps) {
-  return <CaseStudyReadingSurface projectId={projectId} onBack={onBack} />;
+  return (
+    <CaseStudyReadingSurface
+      projectId={projectId}
+      initialSectionId={initialSectionId}
+      initialEvidenceId={initialEvidenceId}
+      routeRestoreKey={routeRestoreKey}
+      onActiveSectionChange={onActiveSectionChange}
+      onEvidenceOpen={onEvidenceOpen}
+      onEvidenceClose={onEvidenceClose}
+      onBack={onBack}
+    />
+  );
 }

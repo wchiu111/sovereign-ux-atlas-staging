@@ -315,8 +315,11 @@ export function parseAtlasRoute(
   ) ?? -1;
   if (requestedSectionIndex < 0) return null;
   const requestedSection = entry.sections![requestedSectionIndex];
+  const hasPathEvidence =
+    segments.length === 3 && segments[1] === "evidence" && Boolean(segments[2]);
+  if (segments.length !== 1 && !hasPathEvidence) return null;
   const pathEvidenceId =
-    segments[1] === "evidence" && segments[2] ? segments[2] : undefined;
+    hasPathEvidence ? segments[2] : undefined;
   const hashEvidenceId = location.hash ? safeDecode(location.hash.slice(1)) : undefined;
   const candidateEvidenceId = pathEvidenceId ?? hashEvidenceId;
   const evidenceId = requestedSection.evidence?.some(
@@ -324,6 +327,7 @@ export function parseAtlasRoute(
   )
     ? candidateEvidenceId
     : undefined;
+  if (candidateEvidenceId && !evidenceId) return null;
   const canonicalEvidenceSection = evidenceId
     ? entry.sections?.find((section) =>
         section.evidence?.some((evidence) => evidence.id === evidenceId),

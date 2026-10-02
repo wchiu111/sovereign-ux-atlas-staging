@@ -30,7 +30,10 @@ import SystemNode from "./case-studies/constellation/SystemNode";
 import ExperimentsOverviewConstellation from "./experiments/constellation/ExperimentsOverviewConstellation";
 import useExperimentsAtlasTransition from "./experiments/hooks/useExperimentsAtlasTransition";
 import { EXPERIMENTS_PARENT_CORE } from "./experiments/config/experimentsTopology";
-import type { MobileCaseStudyProjectId } from "./reading/mobileReadingTypes";
+import type {
+  MobileCaseStudyProjectId,
+  MobileEvidenceItem,
+} from "./reading/mobileReadingTypes";
 import type { MobileFrameworkId } from "./frameworks/mobileFrameworkTypes";
 import type { FrameworkOverviewId } from "./frameworks/frameworkGeometry";
 import type { MobileExperimentId } from "./experiments/experimentsTypes";
@@ -45,11 +48,19 @@ import {
 } from "./experiments/config/experimentsContent";
 import {
   mobileDestinationFromPath,
+  mobileCaseStudyEvidencePath,
+  mobileCaseStudyReaderEntryPath,
+  mobileCaseStudySectionPath,
   mobileOverviewDestinationPath,
   type MobileAtlasOverviewDestination,
   type MobileAtlasRouteDestination,
+  type MobileCaseStudyReaderDestination,
 } from "./mobileRouteState";
-import { pushAtlasPath } from "../../routing/atlasRoutes";
+import {
+  pushAtlasPath,
+  replaceAtlasPath,
+} from "../../routing/atlasRoutes";
+import { mobileCaseStudyDocumentFor } from "./reading/caseStudyReadingRegistry";
 
 type AtlasRuntimeState =
   | MobileState
@@ -155,9 +166,14 @@ export default function MobileAtlas() {
   }
   const initialRouteDestination = initialRouteDestinationRef.current;
   const initialOverviewDestination =
-    initialRouteDestination?.kind === "deeper"
+    initialRouteDestination?.kind === "deeper" ||
+    initialRouteDestination?.kind === "case-study-reader"
       ? null
       : initialRouteDestination;
+  const initialCaseStudyReaderDestination =
+    initialRouteDestination?.kind === "case-study-reader"
+      ? initialRouteDestination
+      : null;
 
   const [state, setStateRaw] = useState<AtlasRuntimeState>(() => {
     if (initialOverviewDestination?.kind === "case-studies") {
@@ -169,12 +185,14 @@ export default function MobileAtlas() {
     if (initialOverviewDestination?.kind === "experiments") {
       return "experiments-focus";
     }
+    if (initialCaseStudyReaderDestination) return "project-reading";
     return "atlas-landing";
   });
   const historyRestorationRef = useRef(false);
   const [caseStudiesRestoreKey, setCaseStudiesRestoreKey] = useState(0);
   const [frameworksRestoreKey, setFrameworksRestoreKey] = useState(0);
   const [experimentsRestoreKey, setExperimentsRestoreKey] = useState(0);
+  const [caseStudyReaderRestoreKey, setCaseStudyReaderRestoreKey] = useState(0);
 
   const initialCaseStudySelectionId =
     initialOverviewDestination?.kind === "case-studies"
@@ -208,9 +226,21 @@ export default function MobileAtlas() {
     useRef<FrameworkOverviewId | null>(null);
 
   const [activeCaseStudyProjectId, setActiveCaseStudyProjectId] =
-    useState<MobileCaseStudyProjectId | null>(null);
+    useState<MobileCaseStudyProjectId | null>(
+      initialCaseStudyReaderDestination?.projectId ?? null,
+    );
   const [returnCaseStudyProjectId, setReturnCaseStudyProjectId] =
     useState<MobileCaseStudyProjectId | null>(null);
+  const [activeCaseStudySectionId, setActiveCaseStudySectionId] =
+    useState<string | null>(
+      initialCaseStudyReaderDestination?.sectionId ?? null,
+    );
+  const [activeCaseStudyEvidenceId, setActiveCaseStudyEvidenceId] =
+    useState<string | null>(
+      initialCaseStudyReaderDestination?.evidenceId ?? null,
+    );
+  const caseStudyReaderPushedRef = useRef(false);
+  const caseStudyEvidencePushedRef = useRef(false);
 
   const [activeExperimentId, setActiveExperimentId] =
     useState<MobileExperimentId>(() =>
@@ -486,7 +516,11 @@ export default function MobileAtlas() {
   }
 
   const restoreMobileDestination = useCallback(
-    (destination: MobileAtlasOverviewDestination) => {
+    (
+      destination:
+        | MobileAtlasOverviewDestination
+        | MobileCaseStudyReaderDestination,
+    ) => {
       historyRestorationRef.current = true;
       setObservatoryPhase("closed");
       setPendingObservatoryDestinationId(null);
@@ -497,12 +531,27 @@ export default function MobileAtlas() {
         setReturningFrameworksToAtlas(false);
         setReturningExperimentsToAtlas(false);
         setStateRaw("atlas-landing");
+        caseStudyReaderPushedRef.current = false;
+        caseStudyEvidencePushedRef.current = false;
       } else if (destination.kind === "case-studies") {
         setCaseStudyRestoredSelectionId(destination.id);
         setActiveCaseStudyProjectId(null);
         setReturnCaseStudyProjectId(null);
         setStateRaw("system-awakened");
         setCaseStudiesRestoreKey((key) => key + 1);
+        caseStudyReaderPushedRef.current = false;
+        caseStudyEvidencePushedRef.current = false;
+      } else if (destination.kind === "case-study-reader") {
+        setActiveCaseStudyProjectId(destination.projectId);
+        setActiveCaseStudySectionId(destination.sectionId);
+        setActiveCaseStudyEvidenceId(destination.evidenceId ?? null);
+        setReturnCaseStudyProjectId(null);
+        setStateRaw("project-reading");
+        setCaseStudyReaderRestoreKey((key) => key + 1);
+        caseStudyReaderPushedRef.current = true;
+        caseStudyEvidencePushedRef.current = Boolean(
+          destination.evidenceId,
+        );
       } else if (destination.kind === "frameworks") {
         const selectionId = destination.id as FrameworkOverviewId;
         setFrameworkOverviewSelectionId(selectionId);
@@ -831,8 +880,16 @@ export default function MobileAtlas() {
                   setState("system-awakened")
                 }
                 onSelectProject={(projectId) => {
+                  const document = mobileCaseStudyDocumentFor(projectId);
+                  const firstSectionId = document.sections[0]?.id ?? null;
                   setActiveCaseStudyProjectId(projectId);
+                  setActiveCaseStudySectionId(firstSectionId);
+                  setActiveCaseStudyEvidenceId(null);
                   setReturnCaseStudyProjectId(null);
+                  caseStudyReaderPushedRef.current = true;
+                  caseStudyEvidencePushedRef.current = false;
+                  const readerPath = mobileCaseStudyReaderEntryPath(projectId);
+                  if (readerPath) pushAtlasPath(readerPath);
                   setState("project-reading");
                 }}
                 returnProjectId={returnCaseStudyProjectId}
@@ -1207,10 +1264,75 @@ export default function MobileAtlas() {
             >
               <ReadingScene
                 projectId={activeCaseStudyProjectId}
+                initialSectionId={activeCaseStudySectionId}
+                initialEvidenceId={activeCaseStudyEvidenceId}
+                routeRestoreKey={caseStudyReaderRestoreKey}
+                onActiveSectionChange={(sectionId) => {
+                  setActiveCaseStudySectionId(sectionId);
+                  if (
+                    !activeCaseStudyProjectId ||
+                    activeCaseStudyEvidenceId
+                  ) {
+                    return;
+                  }
+                  const path = mobileCaseStudySectionPath(
+                    activeCaseStudyProjectId,
+                    sectionId,
+                  );
+                  if (path) replaceAtlasPath(path);
+                }}
+                onEvidenceOpen={(item: MobileEvidenceItem) => {
+                  if (!activeCaseStudyProjectId) return;
+                  setActiveCaseStudySectionId(item.sectionId);
+                  setActiveCaseStudyEvidenceId(item.id);
+                  caseStudyEvidencePushedRef.current = true;
+                  const path = mobileCaseStudyEvidencePath(
+                    activeCaseStudyProjectId,
+                    item.sectionId,
+                    item.id,
+                  );
+                  if (path) pushAtlasPath(path);
+                }}
+                onEvidenceClose={(item: MobileEvidenceItem) => {
+                  setActiveCaseStudyEvidenceId(null);
+                  if (
+                    caseStudyEvidencePushedRef.current &&
+                    window.history.length > 1
+                  ) {
+                    caseStudyEvidencePushedRef.current = false;
+                    window.history.back();
+                    return;
+                  }
+                  if (!activeCaseStudyProjectId) return;
+                  const path = mobileCaseStudySectionPath(
+                    activeCaseStudyProjectId,
+                    item.sectionId,
+                  );
+                  if (path) replaceAtlasPath(path);
+                }}
                 onBack={() => {
+                  if (
+                    caseStudyReaderPushedRef.current &&
+                    window.history.length > 1
+                  ) {
+                    caseStudyReaderPushedRef.current = false;
+                    window.history.back();
+                    return;
+                  }
+                  if (activeCaseStudyProjectId) {
+                    const previewPath = mobileOverviewDestinationPath({
+                      kind: "case-studies",
+                      id: activeCaseStudyProjectId,
+                    });
+                    if (previewPath) replaceAtlasPath(previewPath);
+                  }
                   setReturnCaseStudyProjectId(
                     activeCaseStudyProjectId,
                   );
+                  setCaseStudyRestoredSelectionId(
+                    activeCaseStudyProjectId ?? "case-studies",
+                  );
+                  setActiveCaseStudyEvidenceId(null);
                   setState("system-awakened");
                 }}
               />
