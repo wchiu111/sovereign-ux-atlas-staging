@@ -11,13 +11,18 @@ import {
 
 interface ProfileExperienceProps {
   onReturnToAtlas: () => void;
+  focus: ProfileHotspotId | null;
+  onFocus: (focus: ProfileHotspotId) => void;
+  onCloseFocus: () => void;
 }
 
 export default function ProfileExperience({
   onReturnToAtlas,
+  focus,
+  onFocus,
+  onCloseFocus,
 }: ProfileExperienceProps) {
   const [hovered, setHovered] = useState<ProfileHotspotId | null>(null);
-  const [focus, setFocus] = useState<ProfileHotspotId | null>(null);
   const [closingFocus, setClosingFocus] = useState(false);
   const hotspotLayerRef = useRef<HTMLDivElement>(null);
 
@@ -43,12 +48,12 @@ export default function ProfileExperience({
 
     if (hotspot.id === "contact") {
       setClosingFocus(false);
-      setFocus("contact");
+      onFocus("contact");
       return;
     }
 
     setClosingFocus(false);
-    setFocus(hotspot.id);
+    onFocus(hotspot.id);
   };
 
   const closeFocus = () => {
@@ -57,7 +62,7 @@ export default function ProfileExperience({
     setClosingFocus(true);
 
     window.setTimeout(() => {
-      setFocus(null);
+      onCloseFocus();
       setClosingFocus(false);
     }, 720);
   };
