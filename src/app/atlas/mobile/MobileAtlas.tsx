@@ -1,0 +1,1908 @@
+/**
+ * MobileAtlas — Sovereign Atlas mobile prototype orchestrator.
+ */
+
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  T,
+  W,
+  H,
+  NEXUS,
+  ORBIT_R,
+  SYSTEMS,
+  MOBILE_STATES,
+  useStarfield,
+  type MobileState,
+} from "./components/mobileShared";
+import LandingScene from "./scenes/LandingScene";
+import ReadingScene from "./scenes/ReadingScene";
+import FrameworksScene from "./scenes/FrameworksScene";
+import ExperimentsScene from "./experiments/ExperimentsScene";
+import ObservatoryScene from "./observatory/ObservatoryScene";
+import ObservatorySwipeEntry from "./observatory/components/ObservatorySwipeEntry";
+import ObservatorySpatialTransition, {
+  OBSERVATORY_SPATIAL_TRANSITION_DURATION,
+  atlasSpatialAnimation,
+  observatorySpatialAnimation,
+  type ObservatorySpatialDirection,
+} from "./observatory/components/ObservatorySpatialTransition";
+import SystemNode from "./case-studies/constellation/SystemNode";
+import ExperimentsOverviewConstellation from "./experiments/constellation/ExperimentsOverviewConstellation";
+import useExperimentsAtlasTransition from "./experiments/hooks/useExperimentsAtlasTransition";
+import { EXPERIMENTS_PARENT_CORE } from "./experiments/config/experimentsTopology";
+import type {
+  MobileCaseStudyProjectId,
+  MobileEvidenceItem,
+} from "./reading/mobileReadingTypes";
+import type { MobileFrameworkId } from "./frameworks/mobileFrameworkTypes";
+import type { FrameworkOverviewId } from "./frameworks/frameworkGeometry";
+import type { MobileExperimentId } from "./experiments/experimentsTypes";
+import type { ObservatoryPanelId } from "./observatory/observatoryTypes";
+import type { AtlasMobileSearchDestination } from "./components/atlasMobileSearchIndex";
+import {
+  DEFAULT_MOBILE_FRAMEWORK_ID,
+  mobileFrameworkFor,
+} from "./frameworks/frameworkRegistry";
+import {
+  DEFAULT_MOBILE_EXPERIMENT_ID,
+  mobileExperimentFor,
+} from "./experiments/config/experimentsContent";
+import {
+  mobileDestinationFromPath,
+  mobileCaseStudyEvidencePath,
+  mobileCaseStudyReaderEntryPath,
+  mobileCaseStudySectionPath,
+  mobileFrameworkEvidencePath,
+  mobileFrameworkReaderEntryPath,
+  mobileFrameworkSectionPath,
+  mobileExperimentEvidencePath,
+  mobileExperimentReaderEntryPath,
+  mobileExperimentSectionPath,
+  mobileObservatoryAtlasPath,
+  mobileObservatoryPath,
+  mobileOverviewDestinationPath,
+  type MobileAtlasOverviewDestination,
+  type MobileAtlasRouteDestination,
+  type MobileCaseStudyReaderDestination,
+  type MobileFrameworkReaderDestination,
+  type MobileExperimentReaderDestination,
+  type MobileObservatoryDestination,
+} from "./mobileRouteState";
+import {
+  pushAtlasPath,
+  replaceAtlasPath,
+} from "../../routing/atlasRoutes";
+import { mobileCaseStudyDocumentFor } from "./reading/caseStudyReadingRegistry";
+
+type AtlasRuntimeState =
+  | MobileState
+  | "experiments-focus"
+  | "experiment-reading";
+
+type ObservatoryRuntimePhase =
+  | "closed"
+  | "pre-enter"
+  | "entering"
+  | "open"
+  | "exiting";
+
+
+const RUNTIME_STATES: readonly AtlasRuntimeState[] = [
+  ...MOBILE_STATES,
+  "experiments-focus",
+  "experiment-reading",
+];
+
+const STATE_LABELS: Record<AtlasRuntimeState, string> = {
+  "atlas-landing":      "A · Landing",
+  "system-awakened":    "B · CS Awakened",
+  "system-overview":    "C · CS Overview",
+  "project-reading":    "H · Reading",
+  "frameworks-focus":   "J · FW Overview",
+  "framework-reading":  "K · FW Reading",
+  "framework-evidence": "L · FW Evidence",
+  "experiments-focus":  "M · EX Overview",
+  "experiment-reading": "N · EX Reading",
+};
+
+const STATE_GROUPS: {
+  label: string;
+  color: string;
+  states: AtlasRuntimeState[];
+}[] = [
+  {
+    label: "LANDING",
+    color: T.gold,
+    states: ["atlas-landing", "system-awakened", "system-overview"],
+  },
+  {
+    label: "CASE STUDIES",
+    color: T.caseStudies,
+    states: ["project-reading"],
+  },
+  {
+    label: "FRAMEWORKS",
+    color: T.frameworks,
+    states: ["frameworks-focus", "framework-reading", "framework-evidence"],
+  },
+  {
+    label: "EXPERIMENTS",
+    color: T.experiments,
+    states: ["experiments-focus", "experiment-reading"],
+  },
+];
+
+const LANDING_STATES: readonly AtlasRuntimeState[] = [
+  "atlas-landing",
+  "system-awakened",
+  "system-overview",
+];
+const CS_READING_STATES: readonly AtlasRuntimeState[] = [
+  "project-reading",
+];
+const FW_STATES: readonly AtlasRuntimeState[] = [
+  "frameworks-focus",
+  "framework-reading",
+  "framework-evidence",
+];
+
+function debugRgb(color: string) {
+  if (color === T.gold) return "232,213,163";
+  if (color === T.caseStudies) return "138,174,200";
+  if (color === T.experiments) return "166,139,212";
+  return "106,184,138";
+}
+
+function isDebugMode() {
+  if (typeof window === "undefined") return false;
+  return new URLSearchParams(window.location.search).get("debug") === "1";
+}
+
+export default function MobileAtlas() {
+  const canvasRef = useRef<HTMLCanvasElement>(null!);
+  const runtimeViewportRef = useRef<HTMLDivElement>(null);
+  useStarfield(canvasRef);
+
+  const [sceneScale, setSceneScale] = useState(1);
+  const [observatoryScale, setObservatoryScale] = useState(1);
+  const [viewportUiTarget, setViewportUiTarget] =
+    useState<HTMLDivElement | null>(null);
+  const initialRouteDestinationRef = useRef<
+    MobileAtlasRouteDestination | null
+  >(null);
+  if (initialRouteDestinationRef.current === null) {
+    initialRouteDestinationRef.current = mobileDestinationFromPath(
+      window.location.pathname,
+      window.location.hash,
+    );
+  }
+  const initialRouteDestination = initialRouteDestinationRef.current;
+  const initialOverviewDestination =
+    initialRouteDestination?.kind === "deeper" ||
+    initialRouteDestination?.kind === "case-study-reader" ||
+    initialRouteDestination?.kind === "framework-reader" ||
+    initialRouteDestination?.kind === "experiment-reader"
+      ? null
+      : initialRouteDestination;
+  const initialCaseStudyReaderDestination =
+    initialRouteDestination?.kind === "case-study-reader"
+      ? initialRouteDestination
+      : null;
+  const initialFrameworkReaderDestination =
+    initialRouteDestination?.kind === "framework-reader"
+      ? initialRouteDestination
+      : null;
+  const initialExperimentReaderDestination =
+    initialRouteDestination?.kind === "experiment-reader"
+      ? initialRouteDestination
+      : null;
+  const initialObservatoryDestination =
+    initialRouteDestination?.kind === "observatory"
+      ? initialRouteDestination
+      : null;
+
+  const [state, setStateRaw] = useState<AtlasRuntimeState>(() => {
+    if (initialOverviewDestination?.kind === "case-studies") {
+      return "system-awakened";
+    }
+    if (initialOverviewDestination?.kind === "frameworks") {
+      return "frameworks-focus";
+    }
+    if (initialOverviewDestination?.kind === "experiments") {
+      return "experiments-focus";
+    }
+    if (initialCaseStudyReaderDestination) return "project-reading";
+    if (initialFrameworkReaderDestination) {
+      return initialFrameworkReaderDestination.evidenceId
+        ? "framework-evidence"
+        : "framework-reading";
+    }
+    if (initialExperimentReaderDestination) return "experiment-reading";
+    return "atlas-landing";
+  });
+  const historyRestorationRef = useRef(false);
+  const [caseStudiesRestoreKey, setCaseStudiesRestoreKey] = useState(0);
+  const [frameworksRestoreKey, setFrameworksRestoreKey] = useState(0);
+  const [experimentsRestoreKey, setExperimentsRestoreKey] = useState(0);
+  const [caseStudyReaderRestoreKey, setCaseStudyReaderRestoreKey] = useState(0);
+  const [frameworkReaderRestoreKey, setFrameworkReaderRestoreKey] = useState(0);
+  const [experimentReaderRestoreKey, setExperimentReaderRestoreKey] = useState(0);
+
+  const initialCaseStudySelectionId =
+    initialOverviewDestination?.kind === "case-studies"
+      ? initialOverviewDestination.id
+      : "case-studies";
+  const [caseStudyRestoredSelectionId, setCaseStudyRestoredSelectionId] =
+    useState(initialCaseStudySelectionId);
+
+  const [activeFrameworkId, setActiveFrameworkId] =
+    useState<MobileFrameworkId>(() =>
+      initialFrameworkReaderDestination?.frameworkId ??
+      (initialOverviewDestination?.kind === "frameworks" &&
+      initialOverviewDestination.id !== "frameworks"
+        ? initialOverviewDestination.id as MobileFrameworkId
+        : DEFAULT_MOBILE_FRAMEWORK_ID),
+    );
+  const [frameworkOverviewSelectionId, setFrameworkOverviewSelectionId] =
+    useState<FrameworkOverviewId>(() =>
+      initialOverviewDestination?.kind === "frameworks"
+        ? initialOverviewDestination.id as FrameworkOverviewId
+        : "frameworks",
+    );
+  const [activeFrameworkSectionId, setActiveFrameworkSectionId] =
+    useState<string>(
+      initialFrameworkReaderDestination?.sectionId ?? "governance",
+    );
+  const [activeFrameworkEvidenceId, setActiveFrameworkEvidenceId] =
+    useState<string | null>(
+      initialFrameworkReaderDestination?.evidenceId ?? null,
+    );
+  const [returnFrameworkId, setReturnFrameworkId] =
+    useState<MobileFrameworkId | null>(null);
+  const [returningFrameworksToAtlas, setReturningFrameworksToAtlas] =
+    useState(false);
+  const pendingFrameworkSearchIdRef =
+    useRef<FrameworkOverviewId | null>(null);
+  const frameworkReaderPushedRef = useRef(false);
+  const frameworkEvidencePushedRef = useRef(false);
+
+  const [activeCaseStudyProjectId, setActiveCaseStudyProjectId] =
+    useState<MobileCaseStudyProjectId | null>(
+      initialCaseStudyReaderDestination?.projectId ?? null,
+    );
+  const [returnCaseStudyProjectId, setReturnCaseStudyProjectId] =
+    useState<MobileCaseStudyProjectId | null>(null);
+  const [activeCaseStudySectionId, setActiveCaseStudySectionId] =
+    useState<string | null>(
+      initialCaseStudyReaderDestination?.sectionId ?? null,
+    );
+  const [activeCaseStudyEvidenceId, setActiveCaseStudyEvidenceId] =
+    useState<string | null>(
+      initialCaseStudyReaderDestination?.evidenceId ?? null,
+    );
+  const caseStudyReaderPushedRef = useRef(false);
+  const caseStudyEvidencePushedRef = useRef(false);
+
+  const [activeExperimentId, setActiveExperimentId] =
+    useState<MobileExperimentId>(() =>
+      initialExperimentReaderDestination?.experimentId ??
+      (initialOverviewDestination?.kind === "experiments" &&
+      initialOverviewDestination.id !== "experiments"
+        ? initialOverviewDestination.id as MobileExperimentId
+        : DEFAULT_MOBILE_EXPERIMENT_ID),
+    );
+  const [activeExperimentSectionId, setActiveExperimentSectionId] =
+    useState<string | null>(
+      initialExperimentReaderDestination?.sectionId ?? null,
+    );
+  const [activeExperimentEvidenceId, setActiveExperimentEvidenceId] =
+    useState<string | null>(
+      initialExperimentReaderDestination?.evidenceId ?? null,
+    );
+  const [returnExperimentId, setReturnExperimentId] =
+    useState<MobileExperimentId | null>(null);
+  const [initialExperimentSearchId, setInitialExperimentSearchId] =
+    useState<MobileExperimentId | null>(() =>
+      initialOverviewDestination?.kind === "experiments" &&
+      initialOverviewDestination.id !== "experiments"
+        ? initialOverviewDestination.id as MobileExperimentId
+        : null,
+    );
+  const [returningExperimentsToAtlas, setReturningExperimentsToAtlas] =
+    useState(false);
+  const pendingExperimentRouteIdRef =
+    useRef<"experiments" | MobileExperimentId>("experiments");
+  const experimentReaderPushedRef = useRef(false);
+  const experimentEvidencePushedRef = useRef(false);
+
+  const pushMobileDestination = useCallback(
+    (destination: MobileAtlasOverviewDestination) => {
+      if (historyRestorationRef.current) return;
+      const path = mobileOverviewDestinationPath(destination);
+      if (path) pushAtlasPath(path);
+    },
+    [],
+  );
+
+  const completeExperimentAtlasEntry = useCallback(() => {
+    setStateRaw("experiments-focus");
+    pushMobileDestination({
+      kind: "experiments",
+      id: pendingExperimentRouteIdRef.current,
+    });
+    pendingExperimentRouteIdRef.current = "experiments";
+  }, [pushMobileDestination]);
+
+  const completeExperimentAtlasReturn = useCallback(() => {
+    setReturningExperimentsToAtlas(false);
+  }, []);
+
+  const {
+    entryPhase: experimentEntryPhase,
+    resolveT: experimentResolveT,
+    prefersReducedMotion: experimentPrefersReducedMotion,
+    reducedEntryProgress: experimentReducedEntryProgress,
+    reducedExitProgress: experimentReducedExitProgress,
+
+    enterExperiments,
+
+    entryInProgress: experimentEntryInProgress,
+    reducedEntryInProgress: experimentReducedEntryInProgress,
+    reducedExitInProgress: experimentReducedExitInProgress,
+    entryProgress: experimentEntryProgress,
+    resolvingOverview: resolvingExperimentOverview,
+
+    landingStartX: experimentLandingStartX,
+    landingStartY: experimentLandingStartY,
+    animatedExperimentX,
+    animatedExperimentY,
+    animatedExperimentOrbitR,
+    selectedSystemScale: experimentSelectedSystemScale,
+    travelingSystemOpacity: experimentTravelingSystemOpacity,
+    overviewResolveOpacity: experimentOverviewResolveOpacity,
+    overviewResolveScale: experimentOverviewResolveScale,
+    overviewResolveTargets: experimentOverviewResolveTargets,
+
+    exitScale: experimentExitScale,
+    exitTranslateX: experimentExitTranslateX,
+    exitTranslateY: experimentExitTranslateY,
+    exitBackgroundT: experimentExitBackgroundT,
+    exitChromeT: experimentExitChromeT,
+
+    contextRecede: experimentContextRecede,
+  } = useExperimentsAtlasTransition({
+    returningToAtlas: returningExperimentsToAtlas,
+    onEnterComplete: completeExperimentAtlasEntry,
+    onReturnComplete: completeExperimentAtlasReturn,
+  });
+
+  const [observatoryPhase, setObservatoryPhase] =
+    useState<ObservatoryRuntimePhase>(
+      initialObservatoryDestination ? "open" : "closed",
+    );
+  const [pendingObservatoryDestinationId, setPendingObservatoryDestinationId] =
+    useState<ObservatoryPanelId | null>(
+      initialObservatoryDestination?.panelId ?? null,
+    );
+  const [observatoryRestoreKey, setObservatoryRestoreKey] = useState(0);
+  const [observatoryPrefersReducedMotion, setObservatoryPrefersReducedMotion] =
+    useState(false);
+  const observatoryTimerRef = useRef<number | null>(null);
+  const observatoryRafRef = useRef<number | null>(null);
+  const pendingObservatoryDestinationRef = useRef<ObservatoryPanelId | null>(
+    initialObservatoryDestination?.panelId ?? null,
+  );
+  const observatoryRoomPushedRef = useRef(false);
+  const observatoryPanelPushedRef = useRef(false);
+
+  const observatoryVisible = observatoryPhase !== "closed";
+  const observatoryDirection: ObservatorySpatialDirection | null =
+    observatoryPhase === "entering"
+      ? "toObservatory"
+      : observatoryPhase === "exiting"
+      ? "toAtlas"
+      : null;
+  const observatoryTransitionDuration = observatoryPrefersReducedMotion
+    ? 160
+    : OBSERVATORY_SPATIAL_TRANSITION_DURATION;
+
+  // Bring Atlas chrome back during the final portion of the Observatory
+  // return transition instead of waiting for the overlay to disappear.
+  const observatoryChromeFadeDuration =
+    observatoryPrefersReducedMotion ? 140 : 520;
+  const observatoryChromeFadeDelay =
+    observatoryPrefersReducedMotion
+      ? 0
+      : Math.max(0, observatoryTransitionDuration - 700);
+  const observatoryChromeVisible =
+    observatoryPhase === "closed" ||
+    observatoryPhase === "exiting";
+
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const sync = () => setObservatoryPrefersReducedMotion(media.matches);
+    sync();
+    media.addEventListener?.("change", sync);
+    return () => media.removeEventListener?.("change", sync);
+  }, []);
+
+  const clearObservatoryTransition = useCallback(() => {
+    if (observatoryTimerRef.current !== null) {
+      window.clearTimeout(observatoryTimerRef.current);
+      observatoryTimerRef.current = null;
+    }
+    if (observatoryRafRef.current !== null) {
+      cancelAnimationFrame(observatoryRafRef.current);
+      observatoryRafRef.current = null;
+    }
+  }, []);
+
+  const enterObservatory = useCallback((panelId: ObservatoryPanelId | null = null) => {
+    if (
+      observatoryVisible ||
+      experimentEntryInProgress ||
+      returningExperimentsToAtlas
+    ) {
+      return;
+    }
+
+    clearObservatoryTransition();
+    pendingObservatoryDestinationRef.current = panelId;
+    setPendingObservatoryDestinationId(panelId);
+    setObservatoryPhase("pre-enter");
+
+    observatoryRafRef.current = requestAnimationFrame(() => {
+      observatoryRafRef.current = requestAnimationFrame(() => {
+        setObservatoryPhase("entering");
+        observatoryRafRef.current = null;
+      });
+    });
+
+    observatoryTimerRef.current = window.setTimeout(() => {
+      setObservatoryPhase("open");
+      const roomPath = mobileObservatoryPath();
+      if (roomPath) {
+        observatoryRoomPushedRef.current = true;
+        pushAtlasPath(roomPath);
+      }
+      const destinationId = pendingObservatoryDestinationRef.current;
+      if (destinationId) {
+        const panelPath = mobileObservatoryPath(destinationId);
+        if (panelPath) {
+          observatoryPanelPushedRef.current = true;
+          pushAtlasPath(panelPath);
+        }
+      }
+      observatoryTimerRef.current = null;
+    }, observatoryTransitionDuration);
+  }, [
+    clearObservatoryTransition,
+    experimentEntryInProgress,
+    observatoryTransitionDuration,
+    observatoryVisible,
+    returningExperimentsToAtlas,
+  ]);
+
+  const exitObservatory = useCallback(() => {
+    if (!observatoryVisible || observatoryPhase === "exiting") return;
+
+    clearObservatoryTransition();
+    setObservatoryPhase("exiting");
+
+    observatoryTimerRef.current = window.setTimeout(() => {
+      setObservatoryPhase("closed");
+      setPendingObservatoryDestinationId(null);
+      pendingObservatoryDestinationRef.current = null;
+      observatoryPanelPushedRef.current = false;
+      if (
+        observatoryRoomPushedRef.current &&
+        window.history.length > 1
+      ) {
+        observatoryRoomPushedRef.current = false;
+        window.history.back();
+      } else {
+        replaceAtlasPath(mobileObservatoryAtlasPath());
+      }
+      observatoryTimerRef.current = null;
+    }, observatoryTransitionDuration);
+  }, [
+    clearObservatoryTransition,
+    observatoryPhase,
+    observatoryTransitionDuration,
+    observatoryVisible,
+  ]);
+
+  const handleAtlasSearchNavigate = useCallback(
+    (destination: AtlasMobileSearchDestination) => {
+      if (destination.kind === "case-studies") {
+        // Case Studies uses LandingScene's existing pull choreography.
+        return;
+      }
+
+      if (destination.kind === "frameworks") {
+        pendingFrameworkSearchIdRef.current = destination.id;
+
+        if (destination.id !== "frameworks") {
+          const nextFramework = mobileFrameworkFor(destination.id);
+          setActiveFrameworkId(destination.id);
+          setActiveFrameworkSectionId(
+            nextFramework.sections[0]?.id ?? "",
+          );
+          setActiveFrameworkEvidenceId(null);
+        }
+
+        return;
+      }
+
+      if (destination.kind === "experiments") {
+        setReturningExperimentsToAtlas(false);
+        setReturnExperimentId(null);
+        pendingExperimentRouteIdRef.current = destination.id;
+
+        if (destination.id === "experiments") {
+          setInitialExperimentSearchId(null);
+        } else {
+          setInitialExperimentSearchId(destination.id);
+          setActiveExperimentId(destination.id);
+        }
+
+        enterExperiments();
+        return;
+      }
+
+      enterObservatory(
+        destination.id === "observatory" ? null : destination.id,
+      );
+    },
+    [enterExperiments, enterObservatory],
+  );
+
+  useEffect(() => {
+    return () => clearObservatoryTransition();
+  }, [clearObservatoryTransition]);
+
+  const debugMode = isDebugMode();
+
+  useLayoutEffect(() => {
+    const viewport = runtimeViewportRef.current!;
+    if (!viewport) return;
+
+    function updateSceneScale() {
+      const width = viewport.clientWidth;
+      const height = viewport.clientHeight;
+      if (width <= 0 || height <= 0) return;
+
+      // Uniform contain scaling:
+      // preserve the authored 390×844 scene as one composition.
+      // On wide preview surfaces, stop scaling once the mobile presentation
+      // reaches the same 430px width used by Focused Mode.
+      const maxPresentationScale = 430 / W;
+      const nextScale = Math.min(
+        width / W,
+        height / H,
+        maxPresentationScale,
+      );
+      setSceneScale(nextScale);
+      setObservatoryScale(Math.min(width / W, height / H));
+    }
+
+    updateSceneScale();
+    window.addEventListener("resize", updateSceneScale);
+
+    return () => {
+      window.removeEventListener("resize", updateSceneScale);
+    };
+  }, []);
+
+  function setState(next: AtlasRuntimeState) {
+    if ((RUNTIME_STATES as readonly string[]).includes(next)) {
+      setStateRaw(next);
+    } else {
+      setStateRaw("atlas-landing");
+    }
+  }
+
+  const restoreMobileDestination = useCallback(
+    (
+      destination:
+        | MobileAtlasOverviewDestination
+        | MobileCaseStudyReaderDestination
+        | MobileFrameworkReaderDestination
+        | MobileExperimentReaderDestination
+        | MobileObservatoryDestination,
+    ) => {
+      historyRestorationRef.current = true;
+      if (destination.kind === "observatory") {
+        clearObservatoryTransition();
+        pendingObservatoryDestinationRef.current = destination.panelId;
+        setPendingObservatoryDestinationId(destination.panelId);
+        setObservatoryPhase("open");
+        setObservatoryRestoreKey((key) => key + 1);
+        observatoryRoomPushedRef.current = true;
+        observatoryPanelPushedRef.current = Boolean(destination.panelId);
+        requestAnimationFrame(() => {
+          historyRestorationRef.current = false;
+        });
+        return;
+      }
+      setObservatoryPhase("closed");
+      setPendingObservatoryDestinationId(null);
+      pendingObservatoryDestinationRef.current = null;
+
+      if (destination.kind === "atlas") {
+        setActiveCaseStudyProjectId(null);
+        setReturnCaseStudyProjectId(null);
+        setReturningFrameworksToAtlas(false);
+        setReturningExperimentsToAtlas(false);
+        setStateRaw("atlas-landing");
+        caseStudyReaderPushedRef.current = false;
+        caseStudyEvidencePushedRef.current = false;
+        frameworkReaderPushedRef.current = false;
+        frameworkEvidencePushedRef.current = false;
+        experimentReaderPushedRef.current = false;
+        experimentEvidencePushedRef.current = false;
+        observatoryRoomPushedRef.current = false;
+        observatoryPanelPushedRef.current = false;
+      } else if (destination.kind === "case-studies") {
+        setCaseStudyRestoredSelectionId(destination.id);
+        setActiveCaseStudyProjectId(null);
+        setReturnCaseStudyProjectId(null);
+        setStateRaw("system-awakened");
+        setCaseStudiesRestoreKey((key) => key + 1);
+        caseStudyReaderPushedRef.current = false;
+        caseStudyEvidencePushedRef.current = false;
+      } else if (destination.kind === "case-study-reader") {
+        setActiveCaseStudyProjectId(destination.projectId);
+        setActiveCaseStudySectionId(destination.sectionId);
+        setActiveCaseStudyEvidenceId(destination.evidenceId ?? null);
+        setReturnCaseStudyProjectId(null);
+        setStateRaw("project-reading");
+        setCaseStudyReaderRestoreKey((key) => key + 1);
+        caseStudyReaderPushedRef.current = true;
+        caseStudyEvidencePushedRef.current = Boolean(
+          destination.evidenceId,
+        );
+      } else if (destination.kind === "frameworks") {
+        const selectionId = destination.id as FrameworkOverviewId;
+        setFrameworkOverviewSelectionId(selectionId);
+        setReturnFrameworkId(null);
+        setReturningFrameworksToAtlas(false);
+        if (selectionId !== "frameworks") {
+          const frameworkId = selectionId as MobileFrameworkId;
+          const framework = mobileFrameworkFor(frameworkId);
+          setActiveFrameworkId(frameworkId);
+          setActiveFrameworkSectionId(framework.sections[0]?.id ?? "");
+          setActiveFrameworkEvidenceId(null);
+        }
+        setStateRaw("frameworks-focus");
+        setFrameworksRestoreKey((key) => key + 1);
+        frameworkReaderPushedRef.current = false;
+        frameworkEvidencePushedRef.current = false;
+      } else if (destination.kind === "framework-reader") {
+        setActiveFrameworkId(destination.frameworkId);
+        setFrameworkOverviewSelectionId(destination.frameworkId);
+        setActiveFrameworkSectionId(destination.sectionId);
+        setActiveFrameworkEvidenceId(destination.evidenceId ?? null);
+        setReturnFrameworkId(null);
+        setReturningFrameworksToAtlas(false);
+        setStateRaw(
+          destination.evidenceId
+            ? "framework-evidence"
+            : "framework-reading",
+        );
+        setFrameworkReaderRestoreKey((key) => key + 1);
+        frameworkReaderPushedRef.current = true;
+        frameworkEvidencePushedRef.current = Boolean(
+          destination.evidenceId,
+        );
+      } else if (destination.kind === "experiment-reader") {
+        setActiveExperimentId(destination.experimentId);
+        setActiveExperimentSectionId(destination.sectionId);
+        setActiveExperimentEvidenceId(destination.evidenceId ?? null);
+        setInitialExperimentSearchId(null);
+        setReturnExperimentId(null);
+        setReturningExperimentsToAtlas(false);
+        setStateRaw("experiment-reading");
+        setExperimentReaderRestoreKey((key) => key + 1);
+        experimentReaderPushedRef.current = true;
+        experimentEvidencePushedRef.current = Boolean(
+          destination.evidenceId,
+        );
+      } else {
+        const selectionId = destination.id;
+        setReturnExperimentId(null);
+        setReturningExperimentsToAtlas(false);
+        if (selectionId === "experiments") {
+          setInitialExperimentSearchId(null);
+        } else {
+          const experimentId = selectionId as MobileExperimentId;
+          setActiveExperimentId(experimentId);
+          setInitialExperimentSearchId(experimentId);
+        }
+        setStateRaw("experiments-focus");
+        setExperimentsRestoreKey((key) => key + 1);
+        experimentReaderPushedRef.current = false;
+        experimentEvidencePushedRef.current = false;
+      }
+
+      requestAnimationFrame(() => {
+        historyRestorationRef.current = false;
+      });
+    },
+    [clearObservatoryTransition],
+  );
+
+  useEffect(() => {
+    const handlePopState = () => {
+      const destination = mobileDestinationFromPath(
+        window.location.pathname,
+        window.location.hash,
+      );
+      if (!destination || destination.kind === "deeper") return;
+      restoreMobileDestination(destination);
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [restoreMobileDestination]);
+
+  const isLanding =
+    (LANDING_STATES as readonly string[]).includes(state);
+  const isCSReading =
+    (CS_READING_STATES as readonly string[]).includes(state);
+  const isFW =
+    (FW_STATES as readonly string[]).includes(state);
+  const isFrameworkReadingDepth =
+    state === "framework-reading" || state === "framework-evidence";
+  const isFrameworkEvidence = state === "framework-evidence";
+  const isExperimentsOverview = state === "experiments-focus";
+  const isExperimentReading = state === "experiment-reading";
+
+  useEffect(() => {
+    if (state !== "framework-reading" || activeFrameworkEvidenceId) return;
+    const path = mobileFrameworkSectionPath(
+      activeFrameworkId,
+      activeFrameworkSectionId,
+    );
+    if (path) replaceAtlasPath(path);
+  }, [
+    activeFrameworkEvidenceId,
+    activeFrameworkId,
+    activeFrameworkSectionId,
+    state,
+  ]);
+
+  useEffect(() => {
+    if (state !== "experiment-reading" || activeExperimentEvidenceId) return;
+    if (!activeExperimentSectionId) return;
+    const path = mobileExperimentSectionPath(
+      activeExperimentId,
+      activeExperimentSectionId,
+    );
+    if (path) replaceAtlasPath(path);
+  }, [
+    activeExperimentEvidenceId,
+    activeExperimentId,
+    activeExperimentSectionId,
+    state,
+  ]);
+
+  const experimentsAtlasTransitionActive =
+    experimentEntryInProgress || returningExperimentsToAtlas;
+
+  const experimentsLandingOpacity = returningExperimentsToAtlas
+    ? experimentExitBackgroundT
+    : experimentEntryInProgress
+    ? experimentReducedEntryInProgress
+      ? 1 - experimentReducedEntryProgress
+      : experimentContextRecede.opacity
+    : 1;
+
+  const experimentsLandingScale = returningExperimentsToAtlas
+    ? 0.978 + (1 - 0.978) * experimentExitBackgroundT
+    : experimentEntryInProgress
+    ? experimentReducedEntryInProgress
+      ? 1 - 0.012 * experimentReducedEntryProgress
+      : experimentContextRecede.scale
+    : 1;
+
+  const experimentsViewportUiOpacity = returningExperimentsToAtlas
+    ? experimentExitChromeT
+    : experimentEntryInProgress
+    ? experimentReducedEntryInProgress
+      ? 1 - experimentReducedEntryProgress
+      : Math.max(0, 1 - experimentEntryProgress * 1.35)
+    : 1;
+
+  const experimentsSystem = SYSTEMS[1];
+
+  return (
+    <>
+      <style>{`
+        .mobile-atlas-root,
+        .mobile-atlas-root * { -webkit-tap-highlight-color: transparent; }
+        .mobile-atlas-root { overscroll-behavior: contain; touch-action: manipulation; }
+        .mobile-atlas-root * { scrollbar-width: none; -ms-overflow-style: none; }
+        .mobile-atlas-root *::-webkit-scrollbar { width: 0; height: 0; display: none; }
+
+        .mobile-atlas-system-hit-target:focus-visible {
+          outline: 1.5px solid rgba(166,139,212,0.9);
+          outline-offset: 3px;
+        }
+
+        .mobile-atlas-observatory-layer button:focus-visible {
+          outline: 1.5px solid rgba(232,200,109,0.92);
+          outline-offset: 3px;
+        }
+
+        .mobile-atlas-landing-wrap[data-experiments-transitioning="true"]
+        [data-system-id="experiments"] {
+          opacity: 0 !important;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .mobile-atlas-root *,
+          .mobile-atlas-root *::before,
+          .mobile-atlas-root *::after {
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+            transition-duration: 0.01ms !important;
+            scroll-behavior: auto !important;
+          }
+        }
+      `}</style>
+
+      <div
+        className="mobile-atlas-root"
+        style={{
+          minHeight: debugMode ? "100vh" : "100dvh",
+          width: "100%",
+          background: "#080810",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: debugMode ? 24 : 0,
+          padding: debugMode ? "48px 24px 60px" : 0,
+          fontFamily: T.mono,
+        }}
+      >
+        {debugMode && (
+          <div
+            style={{
+              color: "rgba(232,213,163,0.32)",
+              fontSize: 9,
+              letterSpacing: "0.32em",
+            }}
+          >
+            SOVEREIGN ATLAS · MOBILE PROTOTYPE · 390 × 844
+          </div>
+        )}
+
+        <div
+          ref={runtimeViewportRef}
+          className="mobile-atlas-runtime-viewport"
+          style={{
+            position: "relative",
+            width: debugMode ? W : "100%",
+            height: debugMode ? H : "100dvh",
+            overflow: "hidden",
+            background: T.bg,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flexShrink: 0,
+          }}
+        >
+          <canvas
+            ref={canvasRef}
+            aria-hidden="true"
+            style={{
+              position: "absolute",
+              inset: 0,
+              width: "100%",
+              height: "100%",
+              display: "block",
+              pointerEvents: "none",
+            }}
+          />
+
+          <div
+            style={{
+              position: "relative",
+              width: W,
+              height: H,
+              overflow: "hidden",
+              overscrollBehavior: "contain",
+              borderRadius: debugMode ? 48 : 0,
+              border: debugMode
+                ? "1.5px solid rgba(232,213,163,0.10)"
+                : "none",
+              boxShadow: debugMode
+                ? "0 0 0 6px rgba(5,5,10,0.9), 0 0 80px rgba(138,174,200,0.055), 0 40px 120px rgba(0,0,0,0.85)"
+                : "none",
+              background: "transparent",
+              flexShrink: 0,
+              zIndex:
+                observatoryPhase === "entering"
+                  ? 46
+                  : observatoryPhase === "exiting"
+                  ? 44
+                  : 1,
+              visibility:
+                observatoryPhase === "open" ? "hidden" : "visible",
+              transform: `scale(${sceneScale})`,
+              transformOrigin: "center center",
+              pointerEvents: observatoryVisible
+                ? "none"
+                : "auto",
+            }}
+          >
+            <div
+              className="mobile-atlas-spatial-layer"
+              style={{
+                position: "absolute",
+                inset: 0,
+                overflow: "hidden",
+                opacity:
+                  observatoryPhase === "open" ||
+                  (observatoryPrefersReducedMotion &&
+                    observatoryPhase === "entering")
+                    ? 0
+                    : 1,
+                filter:
+                  observatoryPhase === "open"
+                    ? "blur(4px) saturate(0.76)"
+                    : undefined,
+                clipPath:
+                  observatoryPhase === "open"
+                    ? "circle(29% at 50% 44%)"
+                    : undefined,
+                transform:
+                  observatoryPhase === "open"
+                    ? "scale(0.6)"
+                    : "scale(1)",
+                transformOrigin: "50% 44%",
+                animation:
+                  observatoryPrefersReducedMotion
+                    ? undefined
+                    : atlasSpatialAnimation(observatoryDirection),
+                transition:
+                  observatoryPrefersReducedMotion &&
+                  observatoryDirection
+                    ? "opacity 160ms ease"
+                    : undefined,
+                willChange: "transform, clip-path, filter, opacity",
+              }}
+            >
+            {isLanding && (
+              <div
+                className="mobile-atlas-landing-wrap"
+                data-experiments-transitioning={
+                  experimentsAtlasTransitionActive ? "true" : "false"
+                }
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  opacity: experimentsLandingOpacity,
+                  transform: `scale(${experimentsLandingScale})`,
+                  transformOrigin: `${NEXUS.x}px ${NEXUS.y + 26}px`,
+                  transition: experimentsAtlasTransitionActive
+                    ? "opacity 260ms ease, transform 560ms cubic-bezier(0.22,1,0.36,1)"
+                    : "none",
+                  pointerEvents: experimentsAtlasTransitionActive
+                    ? "none"
+                    : "auto",
+                }}
+              >
+              <LandingScene
+                key={`case-studies-${caseStudiesRestoreKey}`}
+                state={
+                  state as
+                    | "atlas-landing"
+                    | "system-awakened"
+                    | "system-overview"
+                }
+                initialCaseStudySelectionId={
+                  caseStudyRestoredSelectionId as
+                    | "case-studies"
+                    | MobileCaseStudyProjectId
+                }
+                onSelectCaseStudies={() => {
+                  setState("system-awakened");
+                  pushMobileDestination({
+                    kind: "case-studies",
+                    id: "case-studies",
+                  });
+                }}
+                onCaseStudyOverviewSelect={(id) => {
+                  setCaseStudyRestoredSelectionId(id);
+                  pushMobileDestination({ kind: "case-studies", id });
+                }}
+                onSelectFrameworks={() => {
+                  setReturningFrameworksToAtlas(false);
+                  setReturnFrameworkId(null);
+
+                  const searchTarget =
+                    pendingFrameworkSearchIdRef.current ?? "frameworks";
+
+                  if (searchTarget === "frameworks") {
+                    setFrameworkOverviewSelectionId("frameworks");
+                  } else {
+                    const nextFramework =
+                      mobileFrameworkFor(searchTarget);
+                    setActiveFrameworkId(searchTarget);
+                    setActiveFrameworkSectionId(
+                      nextFramework.sections[0]?.id ?? "",
+                    );
+                    setActiveFrameworkEvidenceId(null);
+                    setFrameworkOverviewSelectionId(searchTarget);
+                  }
+
+                  pendingFrameworkSearchIdRef.current = null;
+                  setState("frameworks-focus");
+                  pushMobileDestination({
+                    kind: "frameworks",
+                    id: searchTarget,
+                  });
+                }}
+                onOverviewExpand={() =>
+                  setState("system-overview")
+                }
+                onOverviewBack={() =>
+                  setState("system-awakened")
+                }
+                onSelectProject={(projectId) => {
+                  const document = mobileCaseStudyDocumentFor(projectId);
+                  const firstSectionId = document.sections[0]?.id ?? null;
+                  setActiveCaseStudyProjectId(projectId);
+                  setActiveCaseStudySectionId(firstSectionId);
+                  setActiveCaseStudyEvidenceId(null);
+                  setReturnCaseStudyProjectId(null);
+                  caseStudyReaderPushedRef.current = true;
+                  caseStudyEvidencePushedRef.current = false;
+                  const readerPath = mobileCaseStudyReaderEntryPath(projectId);
+                  if (readerPath) pushAtlasPath(readerPath);
+                  setState("project-reading");
+                }}
+                returnProjectId={returnCaseStudyProjectId}
+                onReturnProjectComplete={() => {
+                  setReturnCaseStudyProjectId(null);
+                }}
+                returningFromFrameworks={
+                  returningFrameworksToAtlas
+                }
+                onFrameworkReturnComplete={() => {
+                  setReturningFrameworksToAtlas(false);
+                }}
+                onSearchNavigate={handleAtlasSearchNavigate}
+                viewportUiTarget={viewportUiTarget}
+                onBack={() => {
+                  setActiveCaseStudyProjectId(null);
+                  setReturnCaseStudyProjectId(null);
+                  setState("atlas-landing");
+                  pushMobileDestination({ kind: "atlas" });
+                }}
+              />
+              </div>
+            )}
+
+            {state === "atlas-landing" && (
+              <button
+                type="button"
+                className="mobile-atlas-system-hit-target"
+                aria-label="Open Experiments"
+                onClick={() => {
+                  setReturningExperimentsToAtlas(false);
+                  setReturnExperimentId(null);
+                  setInitialExperimentSearchId(null);
+                  pendingExperimentRouteIdRef.current = "experiments";
+                  enterExperiments();
+                }}
+                disabled={
+                  experimentEntryInProgress || returningExperimentsToAtlas
+                }
+                style={{
+                  position: "absolute",
+                  left: experimentLandingStartX - 56,
+                  top: experimentLandingStartY - 56,
+                  width: 112,
+                  height: 112,
+                  zIndex: 8,
+                  border: "none",
+                  borderRadius: "50%",
+                  background: "transparent",
+                  padding: 0,
+                  cursor: "pointer",
+                  WebkitTapHighlightColor: "transparent",
+                }}
+              />
+            )}
+
+            {state === "atlas-landing" &&
+              !experimentEntryInProgress &&
+              !returningExperimentsToAtlas && (
+                <ObservatorySwipeEntry
+                  visible={observatoryChromeVisible}
+                  fadeInDurationMs={observatoryChromeFadeDuration}
+                  fadeInDelayMs={observatoryChromeFadeDelay}
+                  disabled={observatoryPhase !== "closed"}
+                  onCommit={() => enterObservatory(null)}
+                />
+              )}
+
+            {state === "atlas-landing" &&
+              (experimentEntryInProgress || returningExperimentsToAtlas) && (
+              <svg
+                viewBox={`0 0 ${W} ${H}`}
+                width={W}
+                height={H}
+                aria-hidden
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  zIndex: 10,
+                  pointerEvents: "none",
+                  overflow: "visible",
+                }}
+              >
+                {experimentEntryInProgress && (
+                  <>
+                    <g
+                      style={{
+                        opacity: experimentTravelingSystemOpacity,
+                        transform: `scale(${experimentSelectedSystemScale})`,
+                        transformOrigin: `${animatedExperimentX}px ${animatedExperimentY}px`,
+                        transition: resolvingExperimentOverview
+                          ? "opacity 180ms ease"
+                          : "transform 760ms cubic-bezier(0.22,1,0.36,1), opacity 180ms ease",
+                      }}
+                    >
+                      <SystemNode
+                        sys={experimentsSystem}
+                        cx={animatedExperimentX}
+                        cy={animatedExperimentY}
+                        orbitR={animatedExperimentOrbitR}
+                        awakened
+                        dimmed={false}
+                        showLabel={false}
+                        resolveTargets={
+                          resolvingExperimentOverview
+                            ? experimentOverviewResolveTargets
+                            : undefined
+                        }
+                        resolveT={
+                          resolvingExperimentOverview
+                            ? experimentResolveT
+                            : 0
+                        }
+                      />
+                    </g>
+
+                    {resolvingExperimentOverview && (
+                      <g
+                        style={{
+                          opacity:
+                            experimentResolveT < 0.82
+                              ? 0
+                              : experimentOverviewResolveOpacity,
+                          transform: `scale(${experimentOverviewResolveScale})`,
+                          transformOrigin: `${EXPERIMENTS_PARENT_CORE.x}px ${EXPERIMENTS_PARENT_CORE.y}px`,
+                          transition: "opacity 120ms ease",
+                        }}
+                      >
+                        <ExperimentsOverviewConstellation
+                          selectedId="experiments"
+                          selectionPulseId={null}
+                          ambientPaused
+                          labelsVisible={false}
+                          focusedEntryId={null}
+                          focusedEntryProgress={0}
+                          focusedReturnId={null}
+                          focusedReturnProgress={0}
+                          reducedMotion={experimentPrefersReducedMotion}
+                          onSelect={() => {}}
+                        />
+                      </g>
+                    )}
+                  </>
+                )}
+
+                {returningExperimentsToAtlas && (
+                  <g
+                    style={{
+                      opacity: experimentReducedExitInProgress
+                        ? 1 - experimentReducedExitProgress
+                        : 1,
+                      transform: `translate(${experimentExitTranslateX}px, ${experimentExitTranslateY}px) scale(${experimentExitScale})`,
+                      transformOrigin: `${EXPERIMENTS_PARENT_CORE.x}px ${EXPERIMENTS_PARENT_CORE.y}px`,
+                    }}
+                  >
+                    <ExperimentsOverviewConstellation
+                      selectedId="experiments"
+                      selectionPulseId={null}
+                      ambientPaused
+                      labelsVisible={false}
+                      focusedEntryId={null}
+                      focusedEntryProgress={0}
+                      focusedReturnId={null}
+                      focusedReturnProgress={0}
+                      reducedMotion={experimentPrefersReducedMotion}
+                      onSelect={() => {}}
+                    />
+                  </g>
+                )}
+              </svg>
+            )}
+
+            {isFW && !isFrameworkReadingDepth && (
+              <FrameworksScene
+                key={`frameworks-${frameworksRestoreKey}`}
+                state="frameworks-focus"
+                activeFrameworkId={activeFrameworkId}
+                overviewSelectionId={frameworkOverviewSelectionId}
+                activeSectionId={activeFrameworkSectionId}
+                setActiveSectionId={setActiveFrameworkSectionId}
+                onSelectFramework={(frameworkId) => {
+                  const nextFramework =
+                    mobileFrameworkFor(frameworkId);
+                  setReturnFrameworkId(null);
+                  setActiveFrameworkId(frameworkId);
+                  setActiveFrameworkSectionId(
+                    nextFramework.sections[0]?.id ?? "",
+                  );
+                  setActiveFrameworkEvidenceId(null);
+                  setFrameworkOverviewSelectionId(frameworkId);
+                  pushMobileDestination({
+                    kind: "frameworks",
+                    id: frameworkId,
+                  });
+                }}
+                onSelectParent={() => {
+                  setReturnFrameworkId(null);
+                  setFrameworkOverviewSelectionId("frameworks");
+                  pushMobileDestination({
+                    kind: "frameworks",
+                    id: "frameworks",
+                  });
+                }}
+                onExplore={() => {
+                  const framework = mobileFrameworkFor(activeFrameworkId);
+                  const firstSectionId = framework.sections[0]?.id ?? "";
+                  setReturnFrameworkId(null);
+                  setFrameworkOverviewSelectionId(
+                    activeFrameworkId,
+                  );
+                  setActiveFrameworkSectionId(firstSectionId);
+                  setActiveFrameworkEvidenceId(null);
+                  frameworkReaderPushedRef.current = true;
+                  frameworkEvidencePushedRef.current = false;
+                  const readerPath = mobileFrameworkReaderEntryPath(
+                    activeFrameworkId,
+                  );
+                  if (readerPath) pushAtlasPath(readerPath);
+                  setState("framework-reading");
+                }}
+                onCanvas={(evidenceId) => {
+                  setActiveFrameworkEvidenceId(evidenceId);
+                  setState("framework-evidence");
+                }}
+                activeEvidenceId={activeFrameworkEvidenceId}
+                viewportUiTarget={viewportUiTarget}
+                returnFrameworkId={returnFrameworkId}
+                onReturnFrameworkComplete={() => {
+                  setReturnFrameworkId(null);
+                }}
+                onBack={() => {
+                  pendingFrameworkSearchIdRef.current = null;
+                  setReturnFrameworkId(null);
+                  setFrameworkOverviewSelectionId("frameworks");
+                  setReturningFrameworksToAtlas(true);
+                  setState("atlas-landing");
+                  pushMobileDestination({ kind: "atlas" });
+                }}
+              />
+            )}
+
+            {isExperimentsOverview && (
+              <ExperimentsScene
+                key={`experiments-${experimentsRestoreKey}`}
+                state="experiments-focus"
+                activeExperimentId={activeExperimentId}
+                initialExperimentId={initialExperimentSearchId}
+                returnExperimentId={returnExperimentId}
+                viewportUiTarget={viewportUiTarget}
+                onSelectExperiment={(experimentId) => {
+                  setInitialExperimentSearchId(null);
+                  setReturnExperimentId(null);
+                  setActiveExperimentId(experimentId);
+                }}
+                onOverviewSelection={(id) => {
+                  pushMobileDestination({
+                    kind: "experiments",
+                    id,
+                  });
+                }}
+                onExplore={(experimentId) => {
+                  const experiment = mobileExperimentFor(experimentId);
+                  const firstSectionId = experiment.sections[0]?.id ?? null;
+                  setInitialExperimentSearchId(null);
+                  setReturnExperimentId(null);
+                  setActiveExperimentId(experimentId);
+                  setActiveExperimentSectionId(firstSectionId);
+                  setActiveExperimentEvidenceId(null);
+                  experimentReaderPushedRef.current = true;
+                  experimentEvidencePushedRef.current = false;
+                  const readerPath = mobileExperimentReaderEntryPath(
+                    experimentId,
+                  );
+                  if (readerPath) pushAtlasPath(readerPath);
+                  setState("experiment-reading");
+                }}
+                onReturnExperimentComplete={() => {
+                  setReturnExperimentId(null);
+                }}
+                onBack={() => {
+                  setInitialExperimentSearchId(null);
+                  setReturnExperimentId(null);
+                  setReturningExperimentsToAtlas(true);
+                  setState("atlas-landing");
+                  pushMobileDestination({ kind: "atlas" });
+                }}
+              />
+            )}
+            </div>
+          </div>
+
+          {observatoryVisible && (
+            <div
+              className="mobile-atlas-observatory-layer"
+              style={{
+                position: "absolute",
+                inset: 0,
+                zIndex:
+                  observatoryPhase === "exiting" ? 46 : 44,
+                overflow: "hidden",
+                pointerEvents:
+                  observatoryPhase === "open" ? "auto" : "none",
+              }}
+            >
+              <div
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  opacity:
+                    observatoryPhase === "pre-enter" ||
+                    (observatoryPrefersReducedMotion &&
+                      observatoryPhase === "exiting")
+                      ? 0
+                      : 1,
+                  transform:
+                    observatoryPhase === "pre-enter"
+                      ? "scale(1.04)"
+                      : "scale(1)",
+                  filter:
+                    observatoryPhase === "pre-enter"
+                      ? "blur(7px)"
+                      : "blur(0px)",
+                  transformOrigin: "50% 44%",
+                  animation:
+                    observatoryPrefersReducedMotion
+                      ? undefined
+                      : observatorySpatialAnimation(
+                          observatoryDirection,
+                        ),
+                  transition: observatoryPrefersReducedMotion
+                    ? "opacity 160ms ease, filter 160ms ease"
+                    : undefined,
+                  willChange: "transform, filter, opacity",
+                }}
+              >
+                <ObservatoryScene
+                  onReturnToAtlas={exitObservatory}
+                  presentationScale={observatoryScale}
+                  routeRestoreKey={observatoryRestoreKey}
+                  initialDestinationId={
+                    observatoryPhase === "open"
+                      ? pendingObservatoryDestinationId
+                      : null
+                  }
+                  onPanelCommit={(panelId) => {
+                    pendingObservatoryDestinationRef.current = panelId;
+                    setPendingObservatoryDestinationId(panelId);
+                    observatoryPanelPushedRef.current = true;
+                    const path = mobileObservatoryPath(panelId);
+                    if (path) pushAtlasPath(path);
+                  }}
+                  onPanelClose={() => {
+                    if (
+                      observatoryPanelPushedRef.current &&
+                      window.history.length > 1
+                    ) {
+                      observatoryPanelPushedRef.current = false;
+                      window.history.back();
+                      return;
+                    }
+                    pendingObservatoryDestinationRef.current = null;
+                    setPendingObservatoryDestinationId(null);
+                    const path = mobileObservatoryPath();
+                    if (path) replaceAtlasPath(path);
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
+          {observatoryDirection && !observatoryPrefersReducedMotion && (
+            <ObservatorySpatialTransition
+              direction={observatoryDirection}
+            />
+          )}
+
+          <div
+            ref={(node) => setViewportUiTarget(node)}
+            className="mobile-atlas-viewport-ui"
+            style={{
+              position: "absolute",
+              top: 0,
+              bottom: 0,
+              left: "50%",
+              width: "min(100%, 430px)",
+              transform: "translateX(-50%)",
+              zIndex: 20,
+              pointerEvents: "none",
+              overflow: "hidden",
+              opacity: observatoryChromeVisible
+                ? experimentsViewportUiOpacity
+                : 0,
+              transition:
+                observatoryPhase === "exiting"
+                  ? `opacity ${observatoryChromeFadeDuration}ms cubic-bezier(0.22,1,0.36,1) ${observatoryChromeFadeDelay}ms`
+                  : observatoryVisible
+                  ? "opacity 180ms ease"
+                  : experimentsAtlasTransitionActive
+                  ? "opacity 220ms ease"
+                  : "none",
+            }}
+          />
+
+          {isCSReading && (
+            <div
+              className="mobile-atlas-reading-layer"
+              style={{
+                position: "absolute",
+                inset: 0,
+                zIndex: 30,
+                overflow: "hidden",
+                pointerEvents: "auto",
+              }}
+            >
+              <ReadingScene
+                projectId={activeCaseStudyProjectId}
+                initialSectionId={activeCaseStudySectionId}
+                initialEvidenceId={activeCaseStudyEvidenceId}
+                routeRestoreKey={caseStudyReaderRestoreKey}
+                onActiveSectionChange={(sectionId) => {
+                  setActiveCaseStudySectionId(sectionId);
+                  if (
+                    !activeCaseStudyProjectId ||
+                    activeCaseStudyEvidenceId
+                  ) {
+                    return;
+                  }
+                  const path = mobileCaseStudySectionPath(
+                    activeCaseStudyProjectId,
+                    sectionId,
+                  );
+                  if (path) replaceAtlasPath(path);
+                }}
+                onEvidenceOpen={(item: MobileEvidenceItem) => {
+                  if (!activeCaseStudyProjectId) return;
+                  setActiveCaseStudySectionId(item.sectionId);
+                  setActiveCaseStudyEvidenceId(item.id);
+                  caseStudyEvidencePushedRef.current = true;
+                  const path = mobileCaseStudyEvidencePath(
+                    activeCaseStudyProjectId,
+                    item.sectionId,
+                    item.id,
+                  );
+                  if (path) pushAtlasPath(path);
+                }}
+                onEvidenceClose={(item: MobileEvidenceItem) => {
+                  setActiveCaseStudyEvidenceId(null);
+                  if (
+                    caseStudyEvidencePushedRef.current &&
+                    window.history.length > 1
+                  ) {
+                    caseStudyEvidencePushedRef.current = false;
+                    window.history.back();
+                    return;
+                  }
+                  if (!activeCaseStudyProjectId) return;
+                  const path = mobileCaseStudySectionPath(
+                    activeCaseStudyProjectId,
+                    item.sectionId,
+                  );
+                  if (path) replaceAtlasPath(path);
+                }}
+                onBack={() => {
+                  if (
+                    caseStudyReaderPushedRef.current &&
+                    window.history.length > 1
+                  ) {
+                    caseStudyReaderPushedRef.current = false;
+                    window.history.back();
+                    return;
+                  }
+                  if (activeCaseStudyProjectId) {
+                    const previewPath = mobileOverviewDestinationPath({
+                      kind: "case-studies",
+                      id: activeCaseStudyProjectId,
+                    });
+                    if (previewPath) replaceAtlasPath(previewPath);
+                  }
+                  setReturnCaseStudyProjectId(
+                    activeCaseStudyProjectId,
+                  );
+                  setCaseStudyRestoredSelectionId(
+                    activeCaseStudyProjectId ?? "case-studies",
+                  );
+                  setActiveCaseStudyEvidenceId(null);
+                  setState("system-awakened");
+                }}
+              />
+            </div>
+          )}
+
+          {isFrameworkReadingDepth && (
+            <div
+              className="mobile-atlas-reading-layer mobile-atlas-framework-reading-layer"
+              style={{
+                position: "absolute",
+                inset: 0,
+                zIndex: 30,
+                overflow: "hidden",
+                pointerEvents: "auto",
+              }}
+            >
+              <div
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  bottom: 0,
+                  left: "50%",
+                  width: "min(100%, 430px)",
+                  transform: "translateX(-50%)",
+                  overflow: "hidden",
+                }}
+              >
+                <FrameworksScene
+                  state="framework-reading"
+                  activeFrameworkId={activeFrameworkId}
+                  overviewSelectionId={
+                    frameworkOverviewSelectionId
+                  }
+                  activeSectionId={activeFrameworkSectionId}
+                  setActiveSectionId={
+                    setActiveFrameworkSectionId
+                  }
+                  onSelectFramework={setActiveFrameworkId}
+                  onSelectParent={() =>
+                    setFrameworkOverviewSelectionId("frameworks")
+                  }
+                  onExplore={() =>
+                    setState("framework-reading")
+                  }
+                  onCanvas={(evidenceId) => {
+                    const path = mobileFrameworkEvidencePath(
+                      activeFrameworkId,
+                      activeFrameworkSectionId,
+                      evidenceId,
+                    );
+                    setActiveFrameworkEvidenceId(evidenceId);
+                    frameworkEvidencePushedRef.current = true;
+                    if (path) pushAtlasPath(path);
+                    setState("framework-evidence");
+                  }}
+                  activeEvidenceId={activeFrameworkEvidenceId}
+                  onBack={() => {
+                    if (
+                      frameworkReaderPushedRef.current &&
+                      window.history.length > 1
+                    ) {
+                      frameworkReaderPushedRef.current = false;
+                      window.history.back();
+                      return;
+                    }
+                    const previewPath = mobileOverviewDestinationPath({
+                      kind: "frameworks",
+                      id: activeFrameworkId,
+                    });
+                    if (previewPath) replaceAtlasPath(previewPath);
+                    setReturnFrameworkId(activeFrameworkId);
+                    setFrameworkOverviewSelectionId(
+                      activeFrameworkId,
+                    );
+                    setState("frameworks-focus");
+                  }}
+                  routeRestoreKey={frameworkReaderRestoreKey}
+                />
+
+                {isFrameworkEvidence && (
+                  <FrameworksScene
+                    state="framework-evidence"
+                    activeFrameworkId={activeFrameworkId}
+                    overviewSelectionId={
+                      frameworkOverviewSelectionId
+                    }
+                    activeSectionId={
+                      activeFrameworkSectionId
+                    }
+                    setActiveSectionId={
+                      setActiveFrameworkSectionId
+                    }
+                    onSelectFramework={setActiveFrameworkId}
+                    onSelectParent={() =>
+                      setFrameworkOverviewSelectionId(
+                        "frameworks",
+                      )
+                    }
+                    onExplore={() =>
+                      setState("framework-reading")
+                    }
+                    onCanvas={(evidenceId) => {
+                      const path = mobileFrameworkEvidencePath(
+                        activeFrameworkId,
+                        activeFrameworkSectionId,
+                        evidenceId,
+                      );
+                      setActiveFrameworkEvidenceId(evidenceId);
+                      frameworkEvidencePushedRef.current = true;
+                      if (path) pushAtlasPath(path);
+                      setState("framework-evidence");
+                    }}
+                    activeEvidenceId={
+                      activeFrameworkEvidenceId
+                    }
+                    onBack={() => {
+                      setActiveFrameworkEvidenceId(null);
+                      if (
+                        frameworkEvidencePushedRef.current &&
+                        window.history.length > 1
+                      ) {
+                        frameworkEvidencePushedRef.current = false;
+                        window.history.back();
+                        return;
+                      }
+                      const path = mobileFrameworkSectionPath(
+                        activeFrameworkId,
+                        activeFrameworkSectionId,
+                      );
+                      if (path) replaceAtlasPath(path);
+                      setState("framework-reading");
+                    }}
+                  />
+                )}
+              </div>
+            </div>
+          )}
+
+          {isExperimentReading && (
+            <div
+              className="mobile-atlas-reading-layer mobile-atlas-experiment-reading-layer"
+              style={{
+                position: "absolute",
+                inset: 0,
+                zIndex: 30,
+                overflow: "hidden",
+                pointerEvents: "auto",
+              }}
+            >
+              <div
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  bottom: 0,
+                  left: "50%",
+                  width: "min(100%, 430px)",
+                  transform: "translateX(-50%)",
+                  overflow: "hidden",
+                }}
+              >
+                <ExperimentsScene
+                  state="experiment-reading"
+                  activeExperimentId={activeExperimentId}
+                  initialSectionId={activeExperimentSectionId}
+                  initialEvidenceId={activeExperimentEvidenceId}
+                  routeRestoreKey={experimentReaderRestoreKey}
+                  onActiveSectionChange={setActiveExperimentSectionId}
+                  onEvidenceOpen={(sectionId, evidence) => {
+                    setActiveExperimentSectionId(sectionId);
+                    setActiveExperimentEvidenceId(evidence.id);
+                    experimentEvidencePushedRef.current = true;
+                    const path = mobileExperimentEvidencePath(
+                      activeExperimentId,
+                      sectionId,
+                      evidence.id,
+                    );
+                    if (path) pushAtlasPath(path);
+                  }}
+                  onEvidenceChange={(sectionId, evidence) => {
+                    setActiveExperimentEvidenceId(evidence.id);
+                    const path = mobileExperimentEvidencePath(
+                      activeExperimentId,
+                      sectionId,
+                      evidence.id,
+                    );
+                    if (path) replaceAtlasPath(path);
+                  }}
+                  onEvidenceClose={(sectionId) => {
+                    if (
+                      experimentEvidencePushedRef.current &&
+                      window.history.length > 1
+                    ) {
+                      experimentEvidencePushedRef.current = false;
+                      window.history.back();
+                      return;
+                    }
+                    setActiveExperimentEvidenceId(null);
+                    const path = mobileExperimentSectionPath(
+                      activeExperimentId,
+                      sectionId,
+                    );
+                    if (path) replaceAtlasPath(path);
+                  }}
+                  onBack={() => {
+                    if (
+                      experimentReaderPushedRef.current &&
+                      window.history.length > 1
+                    ) {
+                      experimentReaderPushedRef.current = false;
+                      window.history.back();
+                      return;
+                    }
+                    const previewPath = mobileOverviewDestinationPath({
+                      kind: "experiments",
+                      id: activeExperimentId,
+                    });
+                    if (previewPath) replaceAtlasPath(previewPath);
+                    setReturnExperimentId(activeExperimentId);
+                    setState("experiments-focus");
+                  }}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {debugMode && (
+          <>
+            <div
+              style={{
+                color: "rgba(232,213,163,0.28)",
+                fontSize: 8.5,
+                letterSpacing: "0.22em",
+                textAlign: "center",
+              }}
+            >
+              {STATE_LABELS[state]}
+            </div>
+
+            <div
+              style={{
+                borderTop:
+                  "0.5px solid rgba(232,213,163,0.10)",
+                paddingTop: 20,
+                width: "100%",
+                maxWidth: 560,
+              }}
+            >
+              <div
+                style={{
+                  fontFamily: T.mono,
+                  fontSize: 7,
+                  letterSpacing: "0.22em",
+                  color: "rgba(232,213,163,0.22)",
+                  marginBottom: 14,
+                  textAlign: "center",
+                }}
+              >
+                DEV · STATE SWITCHER · NOT PART OF MOBILE
+                EXPERIENCE
+              </div>
+
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 8,
+                }}
+              >
+                {STATE_GROUPS.map((group) => {
+                  const rgb = debugRgb(group.color);
+
+                  return (
+                    <div
+                      key={group.label}
+                      style={{
+                        display: "flex",
+                        gap: 4,
+                        alignItems: "center",
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontFamily: T.mono,
+                          fontSize: 6,
+                          letterSpacing: "0.18em",
+                          color: group.color,
+                          opacity: 0.28,
+                          minWidth: 80,
+                          paddingRight: 8,
+                          textAlign: "right",
+                        }}
+                      >
+                        {group.label}
+                      </div>
+
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: 2,
+                          flexWrap: "wrap",
+                          background: `rgba(${rgb},0.05)`,
+                          borderRadius: 4,
+                          padding: 2,
+                        }}
+                      >
+                        {group.states.map((s) => (
+                          <button
+                            key={s}
+                            onClick={() => setState(s)}
+                            style={{
+                              background:
+                                state === s
+                                  ? `rgba(${rgb},0.16)`
+                                  : "transparent",
+                              border: "none",
+                              color:
+                                state === s
+                                  ? group.color
+                                  : `${group.color}66`,
+                              fontFamily: T.mono,
+                              fontSize: 7.5,
+                              letterSpacing: "0.14em",
+                              padding: "7px 10px",
+                              cursor: "pointer",
+                              borderRadius: 3,
+                              transition: "all 0.2s ease",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {STATE_LABELS[s]}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div
+              style={{
+                color: "rgba(232,213,163,0.12)",
+                fontSize: 7.5,
+                letterSpacing: "0.14em",
+                textAlign: "center",
+                lineHeight: 1.7,
+              }}
+            >
+              MOBILE PROTOTYPE · Experiments Connected
+            </div>
+          </>
+        )}
+      </div>
+    </>
+  );
+}
