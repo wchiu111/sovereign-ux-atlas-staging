@@ -1077,6 +1077,11 @@ export default function MobileAtlas() {
                 }}
                 onSearchNavigate={handleAtlasSearchNavigate}
                 viewportUiTarget={viewportUiTarget}
+                nexusNavigationReady={
+                  state === "atlas-landing" &&
+                  !experimentsAtlasTransitionActive &&
+                  observatoryPhase === "closed"
+                }
                 onBack={() => {
                   setActiveCaseStudyProjectId(null);
                   setReturnCaseStudyProjectId(null);

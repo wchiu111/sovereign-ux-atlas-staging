@@ -20,6 +20,7 @@ import {
   lerp,
 } from "../case-studies/caseStudyGeometry";
 import NexusNode from "../case-studies/constellation/NexusNode";
+import { isNexusInteractionReady } from "../case-studies/constellation/nexusInteraction";
 import SystemNode from "../case-studies/constellation/SystemNode";
 import CaseStudyOverviewConstellation from "../case-studies/constellation/CaseStudyOverviewConstellation";
 import ProjectPreviewDrawer from "../case-studies/surfaces/ProjectPreviewDrawer";
@@ -79,6 +80,7 @@ interface LandingSceneProps {
   onFrameworkReturnComplete?: () => void;
   onSearchNavigate: (destination: AtlasMobileSearchDestination) => void;
   viewportUiTarget?: HTMLElement | null;
+  nexusNavigationReady: boolean;
 }
 
 export default function LandingScene({
@@ -97,6 +99,7 @@ export default function LandingScene({
   onFrameworkReturnComplete,
   onSearchNavigate,
   viewportUiTarget = null,
+  nexusNavigationReady,
 }: LandingSceneProps) {
   const [activeFocusIndex, setActiveFocusIndex] = useState(0);
   const [pendingSearchCaseStudyId, setPendingSearchCaseStudyId] =
@@ -269,6 +272,11 @@ export default function LandingScene({
     entryInProgress || frameworkEntryInProgress;
   const anyAtlasExitInProgress =
     isExitingCaseStudies || returningFromFrameworks;
+  const nexusInteractive = isNexusInteractionReady({
+    atlasLanding: state === "atlas-landing",
+    localTransitionActive: anyEntryInProgress || anyAtlasExitInProgress,
+    parentNavigationReady: nexusNavigationReady,
+  });
 
   const activeContextRecede = frameworkEntryInProgress
     ? frameworkContextRecede
@@ -490,7 +498,7 @@ export default function LandingScene({
             transition: `opacity 260ms ease, transform 520ms ${CASE_STUDIES_PULL_EASE}`,
           }}
         >
-          <NexusNode op={1} />
+          <NexusNode op={1} interactive={nexusInteractive} />
         </g>
         </g>
         <g
