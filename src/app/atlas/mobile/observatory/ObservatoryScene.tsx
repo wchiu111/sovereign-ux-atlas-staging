@@ -190,8 +190,8 @@ export default function ObservatoryScene({
         }
 
         @keyframes observatoryMobilePreviewIn {
-          from { opacity: 0; transform: translateY(14px) scale(0.985); }
-          to { opacity: 1; transform: translateY(0) scale(1); }
+          from { opacity: 0; transform: translate(-50%, 14px) scale(0.985); }
+          to { opacity: 1; transform: translate(-50%, 0) scale(1); }
         }
 
         @keyframes observatoryMobileFocusResolve {
@@ -284,14 +284,6 @@ export default function ObservatoryScene({
       >
         <ObservatoryHeader quiet={active !== null} />
 
-        {!active && selectedHotspot && (
-          <ObservatoryPreview
-            key={selectedHotspot.id}
-            hotspot={selectedHotspot}
-            onExplore={() => commit(selectedHotspot.id)}
-          />
-        )}
-
         {!active && !selected && !hasInteracted && (
           <div
             aria-hidden
@@ -314,6 +306,17 @@ export default function ObservatoryScene({
           </div>
         )}
       </div>
+
+      {/* The room stays in its authored coordinate space; preview UI lives in
+          the runtime viewport so it shares Atlas drawer typography and width. */}
+      {!active && selectedHotspot && (
+        <ObservatoryPreview
+          key={selectedHotspot.id}
+          hotspot={selectedHotspot}
+          reducedMotion={reducedMotion}
+          onExplore={() => commit(selectedHotspot.id)}
+        />
+      )}
 
       {active && activeHotspot && (
         <ObservatoryFocusShell
