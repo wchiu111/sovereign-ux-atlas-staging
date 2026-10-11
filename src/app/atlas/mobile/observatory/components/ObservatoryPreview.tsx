@@ -4,9 +4,11 @@ import type { ObservatoryHotspotDefinition } from "../observatoryTypes";
 
 export default function ObservatoryPreview({
   hotspot,
+  reducedMotion,
   onExplore,
 }: {
   hotspot: ObservatoryHotspotDefinition;
+  reducedMotion: boolean;
   onExplore: () => void;
 }) {
   return (
@@ -16,11 +18,16 @@ export default function ObservatoryPreview({
       onPointerDown={(event) => event.stopPropagation()}
       style={{
         position: "absolute",
-        inset: 0,
+        top: 0,
+        bottom: 0,
+        left: "50%",
+        width: "min(100%, 430px)",
         zIndex: 18,
+        transform: "translateX(-50%)",
         pointerEvents: "none",
-        animation:
-          "observatoryMobilePreviewIn 320ms cubic-bezier(0.16,1,0.3,1) both",
+        animation: reducedMotion
+          ? "none"
+          : "observatoryMobilePreviewIn 320ms cubic-bezier(0.16,1,0.3,1) both",
       }}
     >
       <AtlasOverviewDrawer
@@ -30,7 +37,7 @@ export default function ObservatoryPreview({
         countLabel={hotspot.eyebrow.toUpperCase()}
         phase="open"
         arrivalVisible
-        reducedMotion={false}
+        reducedMotion={reducedMotion}
         closeDurationMs={320}
         reducedDurationMs={160}
         compact
