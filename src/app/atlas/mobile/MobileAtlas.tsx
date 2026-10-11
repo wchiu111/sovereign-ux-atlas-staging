@@ -1076,6 +1076,7 @@ export default function MobileAtlas() {
                   setReturningFrameworksToAtlas(false);
                 }}
                 onSearchNavigate={handleAtlasSearchNavigate}
+                searchAvailable={observatoryPhase === "closed"}
                 viewportUiTarget={viewportUiTarget}
                 nexusNavigationReady={
                   state === "atlas-landing" &&

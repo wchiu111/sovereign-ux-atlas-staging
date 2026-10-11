@@ -79,6 +79,7 @@ interface LandingSceneProps {
   returningFromFrameworks?: boolean;
   onFrameworkReturnComplete?: () => void;
   onSearchNavigate: (destination: AtlasMobileSearchDestination) => void;
+  searchAvailable: boolean;
   viewportUiTarget?: HTMLElement | null;
   nexusNavigationReady: boolean;
 }
@@ -98,6 +99,7 @@ export default function LandingScene({
   returningFromFrameworks = false,
   onFrameworkReturnComplete,
   onSearchNavigate,
+  searchAvailable,
   viewportUiTarget = null,
   nexusNavigationReady,
 }: LandingSceneProps) {
@@ -964,7 +966,7 @@ export default function LandingScene({
         </div>
       )}
       {state === "system-overview" && <CaseStudiesOverviewSurface item={CASE_STUDY_FOCUS_ITEMS[activeFocusIndex]} />}
-      {state === "atlas-landing" && (
+      {state === "atlas-landing" && searchAvailable && (
         <AtlasUtilitySheet onNavigate={handleSearchNavigate} />
       )}
         </>
