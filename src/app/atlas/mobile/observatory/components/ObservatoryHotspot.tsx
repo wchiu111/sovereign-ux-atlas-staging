@@ -69,7 +69,7 @@ export default function ObservatoryHotspot({
         opacity: subdued ? 0.42 : 1,
         transform:
           selected && hotspot.id === "about"
-            ? "translateY(-20px)"
+            ? "translateY(-96px)"
             : "translateY(0)",
         transition:
           "transform 280ms cubic-bezier(0.22,1,0.36,1), opacity 240ms ease, filter 240ms ease",
